@@ -1,7 +1,7 @@
 /**
  * DroneEngine.ts
  *
- * Central orchestrator for the Cinematic Drone Engine.
+ * Central orchestrator for the Leelulz Drone Manufacturing Plant.
  *
  * Signal chain:
  *   All Layers → masterGain → masterFilter → masterReverb → masterLimiter → Destination
@@ -13,6 +13,12 @@
  *   setDarkness(0–1)         – filter cutoff (0=bright, 1=dark)
  *   setMotion(0–1)           – modulation depth & speed
  *   setDensity(0–1)          – detuning, layer richness
+ *   setMode(mode)            – apply a sound mode preset with smooth transition
+ *   setGrain(0–1)            – noise texture level
+ *   setRust(0–1)             – distortion grit amount
+ *   setHum(0–1)              – low-frequency modulation depth
+ *   setFracture(0–1)         – pitch instability
+ *   setSpace(0–1)            – reverb wetness
  *   randomize()              – smooth-randomise all timbral parameters
  *   savePreset(name)         – persist current state to localStorage
  *   loadPreset(name) → bool  – restore state from localStorage
@@ -32,6 +38,50 @@ import { RandomWalkModulator } from './Modulators'
 import { RecordingEngine } from './RecordingEngine'
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Sound modes
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type SoundMode = 'MANUAL' | 'VOID PRESSURE' | 'COSMIC DECAY' | 'STEEL FURNACE' | 'BLACK REACTOR'
+
+export const SOUND_MODES: SoundMode[] = [
+  'MANUAL',
+  'VOID PRESSURE',
+  'COSMIC DECAY',
+  'STEEL FURNACE',
+  'BLACK REACTOR',
+]
+
+interface ModePreset {
+  darkness: number
+  motion: number
+  density: number
+  grain: number
+  rust: number
+  hum: number
+  fracture: number
+  space: number
+}
+
+const MODE_PRESETS: Record<Exclude<SoundMode, 'MANUAL'>, ModePreset> = {
+  'VOID PRESSURE': {
+    darkness: 0.9, motion: 0.12, density: 0.7,
+    grain: 0.6, rust: 0.75, hum: 0.88, fracture: 0.05, space: 0.25,
+  },
+  'COSMIC DECAY': {
+    darkness: 0.18, motion: 0.82, density: 0.3,
+    grain: 0.15, rust: 0.08, hum: 0.22, fracture: 0.72, space: 0.92,
+  },
+  'STEEL FURNACE': {
+    darkness: 0.55, motion: 0.58, density: 0.92,
+    grain: 0.92, rust: 0.62, hum: 0.48, fracture: 0.18, space: 0.12,
+  },
+  'BLACK REACTOR': {
+    darkness: 0.78, motion: 0.17, density: 0.96,
+    grain: 0.5, rust: 0.38, hum: 0.72, fracture: 0.45, space: 0.82,
+  },
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Preset schema
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -44,6 +94,12 @@ export interface DronePreset {
   subFreq: number
   midFreq: number
   airFreq: number
+  grain?: number
+  rust?: number
+  hum?: number
+  fracture?: number
+  space?: number
+  mode?: SoundMode
 }
 
 const PRESET_STORAGE_KEY = 'drone-engine-presets'
@@ -92,6 +148,14 @@ export class DroneEngine {
   private _motion = 0.4
   private _density = 0.45
 
+  // ── Texture params ────────────────────────────────────────────────────────
+  private _grain = 0.3
+  private _rust = 0.2
+  private _hum = 0.4
+  private _fracture = 0.15
+  private _space = 0.45
+  private _currentMode: SoundMode = 'MANUAL'
+
   // ── Master chain nodes (created lazily in _initialize) ────────────────────
   private masterGain!: Tone.Gain
   private masterFilter!: Tone.Filter
@@ -133,12 +197,21 @@ export class DroneEngine {
     return this.recEngine.elapsedSeconds
   }
 
+  get currentMode(): SoundMode {
+    return this._currentMode
+  }
+
   get currentParams() {
     return {
       volume: this._volume,
       darkness: this._darkness,
       motion: this._motion,
       density: this._density,
+      grain: this._grain,
+      rust: this._rust,
+      hum: this._hum,
+      fracture: this._fracture,
+      space: this._space,
     }
   }
 
@@ -231,6 +304,9 @@ export class DroneEngine {
     ])
 
     this._initialized = true
+
+    // Apply texture params now that nodes are ready
+    this._applyTexture()
   }
 
   /** Start the drone. Resumes AudioContext then starts all layers. */
@@ -330,6 +406,81 @@ export class DroneEngine {
     this._applyDensity(this._density, true)
   }
 
+  // ── Texture controls ────────────────────────────────────────────────────
+
+  /** Grain: noise texture level 0–1. Controls industrial layer gain. */
+  setGrain(value: number): void {
+    this._grain = clamp(value, 0, 1)
+    if (!this._initialized) return
+    const level = 0.01 + this._grain * 0.18
+    this.industrialLayer.setLevel(level)
+  }
+
+  /** Rust: distortion/grit amount 0–1. Affects sub saturation + industrial distortion. */
+  setRust(value: number): void {
+    this._rust = clamp(value, 0, 1)
+    if (!this._initialized) return
+    this.subLayer.setDistortionAmount(this._rust * 0.4)
+    this.industrialLayer.setDistortionAmount(0.1 + this._rust * 0.7)
+    this.industrialLayer.setBandQ(1.5 + this._rust * 8)
+  }
+
+  /** Hum: low-frequency modulation depth 0–1. Deepens sub LFO and level. */
+  setHum(value: number): void {
+    this._hum = clamp(value, 0, 1)
+    if (!this._initialized) return
+    const level = 0.15 + this._hum * 0.4
+    this.subLayer.setLevel(level)
+    this.subLayer.setPitchLFODepth(2 + this._hum * 18)
+  }
+
+  /** Fracture: pitch instability 0–1. Widening shimmer and random-walk chaos. */
+  setFracture(value: number): void {
+    this._fracture = clamp(value, 0, 1)
+    if (!this._initialized) return
+    this.sciFiLayer.setShimmerDepth(0.5 + this._fracture * 24)
+    this.subLayer.setPitchLFODepth(2 + this._fracture * 20)
+  }
+
+  /** Space: reverb wetness 0–1. Controls both master and per-layer reverb. */
+  setSpace(value: number): void {
+    this._space = clamp(value, 0, 1)
+    if (!this._initialized) return
+    const masterWet = 0.08 + this._space * 0.7
+    this.masterReverb.wet.rampTo(masterWet, 4)
+    this.sciFiLayer.setReverbWet(0.3 + this._space * 0.65)
+  }
+
+  /**
+   * Apply a named sound mode preset with smooth parameter ramping.
+   * MANUAL mode leaves all parameters as-is.
+   */
+  setMode(mode: SoundMode): void {
+    this._currentMode = mode
+    if (mode === 'MANUAL') return
+
+    const p = MODE_PRESETS[mode]
+    this._darkness = p.darkness
+    this._motion = p.motion
+    this._density = p.density
+    this._grain = p.grain
+    this._rust = p.rust
+    this._hum = p.hum
+    this._fracture = p.fracture
+    this._space = p.space
+
+    this._applyDarkness(this._darkness, true)
+    this._applyMotion(this._motion, true)
+    this._applyDensity(this._density, true)
+
+    if (!this._initialized) return
+    this.setGrain(this._grain)
+    this.setRust(this._rust)
+    this.setHum(this._hum)
+    this.setFracture(this._fracture)
+    this.setSpace(this._space)
+  }
+
   /**
    * Smooth-randomise all timbral parameters for a fresh soundscape.
    * Transitions are gradual so there are no discontinuities.
@@ -394,6 +545,12 @@ export class DroneEngine {
       subFreq: this._subFreq,
       midFreq: this._midFreq,
       airFreq: this._airFreq,
+      grain: this._grain,
+      rust: this._rust,
+      hum: this._hum,
+      fracture: this._fracture,
+      space: this._space,
+      mode: this._currentMode,
     }
     presets[name] = preset
     localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(presets))
@@ -411,6 +568,12 @@ export class DroneEngine {
     this._subFreq = preset.subFreq ?? this._subFreq
     this._midFreq = preset.midFreq ?? this._midFreq
     this._airFreq = preset.airFreq ?? this._airFreq
+    this._grain = preset.grain ?? this._grain
+    this._rust = preset.rust ?? this._rust
+    this._hum = preset.hum ?? this._hum
+    this._fracture = preset.fracture ?? this._fracture
+    this._space = preset.space ?? this._space
+    this._currentMode = preset.mode ?? 'MANUAL'
 
     this.setVolume(this._volume)
     this.setDarkness(this._darkness)
@@ -421,6 +584,7 @@ export class DroneEngine {
       this.subLayer.setBaseFrequency(this._subFreq, 6)
       this.midLayer.setBaseFrequency(this._midFreq, 6)
       this.sciFiLayer.setBaseFrequency(this._airFreq, 8)
+      this._applyTexture()
     }
 
     return true
@@ -521,12 +685,18 @@ export class DroneEngine {
     const detuneCents = 4 + d * 24
     this.midLayer.setDetune(detuneCents)
 
-    // Industrial layer level (very low even at max)
-    const industrialLevel = 0.02 + d * 0.07
-    this.industrialLayer.setLevel(industrialLevel)
-
-    // Sci-fi shimmer depth
-    const shimmer = 1 + d * 6
+    // Industrial layer level is governed by grain, not density
+    // Sci-fi shimmer base depth (fracture overrides later if set)
+    const shimmer = 0.5 + d * 5
     this.sciFiLayer.setShimmerDepth(shimmer)
+  }
+
+  private _applyTexture(): void {
+    if (!this._initialized) return
+    this.setGrain(this._grain)
+    this.setRust(this._rust)
+    this.setHum(this._hum)
+    this.setFracture(this._fracture)
+    this.setSpace(this._space)
   }
 }

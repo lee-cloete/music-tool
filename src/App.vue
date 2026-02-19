@@ -1,26 +1,23 @@
 <template>
   <div class="app" :class="{ running: isRunning }">
 
-    <!-- ── Ambient background canvas ─────────────────────────────────────── -->
+    <!-- ── Subtle grid background ─────────────────────────────────────────── -->
     <canvas ref="bgCanvas" class="bg-canvas" aria-hidden="true" />
 
     <!-- ── Header ────────────────────────────────────────────────────────── -->
     <header class="app-header">
-      <p class="app-subtitle">Cinematic Drone Engine</p>
+      <p class="plant-title">LEELULZ DRONE MANUFACTURING PLANT</p>
+      <p class="plant-subtitle">Autonomous Harmonic Fabrication Facility</p>
       <div class="status-row">
         <span class="status-dot" :class="{ active: isRunning }" />
-        <span class="status-text">{{ statusLabel }}</span>
+        <span class="status-text" :class="{ warning: isOverload }">{{ statusLabel }}</span>
+        <span v-if="isOverload" class="overload-tag">!! OVERLOAD</span>
       </div>
     </header>
 
-    <!-- ── Visualiser bars ───────────────────────────────────────────────── -->
-    <div class="visualiser" aria-hidden="true">
-      <div
-        v-for="(h, i) in visBars"
-        :key="i"
-        class="vis-bar"
-        :style="{ height: `${h}%`, animationDelay: `${i * 0.18}s` }"
-      />
+    <!-- ── Oscilloscope ───────────────────────────────────────────────────── -->
+    <div class="oscilloscope" aria-hidden="true">
+      <canvas ref="oscCanvas" class="osc-canvas" />
     </div>
 
     <!-- ── Controls ──────────────────────────────────────────────────────── -->
@@ -31,6 +28,12 @@
       :darkness="params.darkness"
       :motion="params.motion"
       :density="params.density"
+      :mode="params.mode"
+      :grain="params.grain"
+      :rust="params.rust"
+      :hum="params.hum"
+      :fracture="params.fracture"
+      :space="params.space"
       :preset-names="presetNames"
       :active-preset="activePreset"
       :is-recording="isRecording"
@@ -42,6 +45,12 @@
       @update:darkness="setDarkness"
       @update:motion="setMotion"
       @update:density="setDensity"
+      @update:mode="setMode"
+      @update:grain="setGrain"
+      @update:rust="setRust"
+      @update:hum="setHum"
+      @update:fracture="setFracture"
+      @update:space="setSpace"
       @save-preset="savePreset"
       @load-preset="loadPreset"
       @delete-preset="deletePreset"
@@ -58,17 +67,10 @@
 </template>
 
 <script setup lang="ts">
-/**
- * App.vue – root shell for the Cinematic Drone Engine.
- *
- * Audio is initialised ONLY inside a user-gesture handler (handleStart).
- * DroneEngine is lazily created on first start and reused thereafter.
- * No audio code runs at module evaluation time.
- */
-
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import Controls from './components/Controls.vue'
 import { DroneEngine } from './audio/DroneEngine'
+import type { SoundMode } from './audio/DroneEngine'
 
 // ── Engine (lazy) ────────────────────────────────────────────────────────────
 let engine: DroneEngine | null = null
@@ -87,6 +89,12 @@ const params = reactive({
   darkness: 0.45,
   motion: 0.4,
   density: 0.45,
+  mode: 'MANUAL' as SoundMode,
+  grain: 0.3,
+  rust: 0.2,
+  hum: 0.4,
+  fracture: 0.15,
+  space: 0.45,
 })
 
 const presetNames = ref<string[]>([])
@@ -97,82 +105,148 @@ const isRecording = ref(false)
 const recordingElapsed = ref(0)
 let recElapsedInterval = 0
 
+// ── Overload detection ────────────────────────────────────────────────────────
+const isOverload = computed(() =>
+  isRunning.value && (params.rust > 0.72 || (params.density > 0.88 && params.grain > 0.65))
+)
+
+// ── Factory status messages ───────────────────────────────────────────────────
+const IDLE_MESSAGES = ['SYSTEM OFFLINE', 'STANDBY MODE', 'AWAITING ACTIVATION']
+const RUN_MESSAGES = [
+  'HARMONIC GENERATION ACTIVE',
+  'PRESSURE STABLE',
+  'SPECTRAL DIFFUSION NOMINAL',
+  'SUB-HARMONIC RESONANCE DETECTED',
+  'DRONE ASSEMBLY IN PROGRESS',
+  'FREQUENCY MATRIX INITIALIZED',
+  'ATMOSPHERIC CALIBRATION COMPLETE',
+  'SIGNAL ROUTING VERIFIED',
+]
+const WARN_MESSAGES = [
+  'HARMONIC INSTABILITY DETECTED',
+  'PRESSURE OVERLOAD WARNING',
+  'DISTORTION THRESHOLD EXCEEDED',
+  'SYSTEM STRESS ELEVATED',
+]
+
+const statusMsgIdx = ref(0)
+let statusInterval = 0
+
 const statusLabel = computed(() => {
-  if (isStarting.value) return 'Initialising audio…'
-  if (isRunning.value) return 'Running'
-  return 'Stopped'
+  if (isStarting.value) return 'INITIALISING AUDIO…'
+  if (!isRunning.value) return IDLE_MESSAGES[statusMsgIdx.value % IDLE_MESSAGES.length]
+  if (isOverload.value) return WARN_MESSAGES[statusMsgIdx.value % WARN_MESSAGES.length]
+  return RUN_MESSAGES[statusMsgIdx.value % RUN_MESSAGES.length]
 })
 
-// ── Background canvas ─────────────────────────────────────────────────────────
+// ── Background grid canvas ────────────────────────────────────────────────────
 const bgCanvas = ref<HTMLCanvasElement | null>(null)
-let animFrame = 0
 
-function startBgAnimation() {
+function drawGrid() {
   const canvas = bgCanvas.value
   if (!canvas) return
   const ctx = canvas.getContext('2d')
   if (!ctx) return
 
-  let t = 0
+  canvas.width = window.innerWidth
+  canvas.height = window.innerHeight
 
-  function resize() {
-    if (!canvas) return
-    canvas.width = window.innerWidth
-    canvas.height = window.innerHeight
+  const w = canvas.width
+  const h = canvas.height
+  const size = 44
+
+  ctx.clearRect(0, 0, w, h)
+  ctx.strokeStyle = 'rgba(60, 60, 60, 0.35)'
+  ctx.lineWidth = 0.5
+
+  for (let x = 0; x <= w; x += size) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke()
   }
-  resize()
-  window.addEventListener('resize', resize)
-
-  function draw() {
-    if (!canvas || !ctx) return
-    const w = canvas.width
-    const h = canvas.height
-
-    ctx.clearRect(0, 0, w, h)
-
-    const cx = w * 0.5 + Math.sin(t * 0.0003) * w * 0.15
-    const cy = h * 0.5 + Math.cos(t * 0.00025) * h * 0.1
-
-    const dark = params.darkness
-    const alpha = isRunning.value ? 0.06 + dark * 0.08 : 0.03
-
-    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 0.65)
-    const r = Math.round(40 + (1 - dark) * 20)
-    const b = Math.round(60 + dark * 30)
-    grad.addColorStop(0, `rgba(${r}, 15, ${b}, ${alpha})`)
-    grad.addColorStop(1, 'rgba(0, 0, 0, 0)')
-
-    ctx.fillStyle = grad
-    ctx.fillRect(0, 0, w, h)
-
-    t++
-    animFrame = requestAnimationFrame(draw)
-  }
-  draw()
-
-  return () => {
-    cancelAnimationFrame(animFrame)
-    window.removeEventListener('resize', resize)
+  for (let y = 0; y <= h; y += size) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
   }
 }
 
-// ── Visualiser ────────────────────────────────────────────────────────────────
-const BAR_COUNT = 24
-const visBars = ref<number[]>(Array(BAR_COUNT).fill(8))
-let visInterval = 0
+// ── Oscilloscope canvas ───────────────────────────────────────────────────────
+const oscCanvas = ref<HTMLCanvasElement | null>(null)
+let oscAnimFrame = 0
 
-function updateVisBars() {
-  const t = Date.now() / 1000
-  const density = params.density
-  const motion = params.motion
-  const base = isRunning.value ? 8 + density * 12 : 4
+function startOscilloscope() {
+  const canvas = oscCanvas.value
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')!
+  if (!ctx) return
 
-  visBars.value = Array.from({ length: BAR_COUNT }, (_, i) => {
-    const phase = (i / BAR_COUNT) * Math.PI * 2
-    const slow = Math.sin(t * (0.2 + motion * 0.4) + phase)
-    const fast = Math.sin(t * (0.7 + motion * 0.8) + phase * 1.6) * 0.4
-    return Math.max(2, base + (slow + fast) * (isRunning.value ? 10 + density * 14 : 3))
-  })
+  function resize() {
+    if (!canvas) return
+    canvas.width = canvas.offsetWidth * window.devicePixelRatio
+    canvas.height = canvas.offsetHeight * window.devicePixelRatio
+    ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
+  }
+  resize()
+
+  let t = 0
+
+  function draw() {
+    if (!canvas) return
+    const dpr = window.devicePixelRatio
+    const w = canvas.width / dpr
+    const h = canvas.height / dpr
+
+    ctx.clearRect(0, 0, w, h)
+
+    // Flat line when stopped
+    if (!isRunning.value) {
+      ctx.strokeStyle = '#222'
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(0, h / 2)
+      ctx.lineTo(w, h / 2)
+      ctx.stroke()
+      t++
+      oscAnimFrame = requestAnimationFrame(draw)
+      return
+    }
+
+    // Primary waveform
+    const amp = h * 0.36 * (0.12 + params.motion * 0.5 + params.fracture * 0.3)
+    const d = params.density
+    const frac = params.fracture
+    const ts = t * 0.016
+
+    ctx.strokeStyle = '#777'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    for (let x = 0; x <= w; x++) {
+      const nx = x / w
+      const y = h / 2
+        + Math.sin(nx * Math.PI * 2 * (3 + d * 7) + ts * (1.2 + params.motion * 3)) * amp * 0.55
+        + Math.sin(nx * Math.PI * 2 * (1.8 + d * 4) * 1.618 + ts * (0.8 + params.motion * 2) + 1.3) * amp * 0.28
+        + Math.sin(nx * Math.PI * 2 * 0.8 + ts * 0.4 + frac * 8) * amp * 0.17
+      if (x === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+
+    // Secondary trace (dimmer, slower)
+    ctx.strokeStyle = '#333'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    for (let x = 0; x <= w; x++) {
+      const nx = x / w
+      const y = h / 2
+        + Math.sin(nx * Math.PI * 2 * (1.5 + d * 3) + ts * 0.5 + 2.1) * amp * 0.38
+      if (x === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+
+    t++
+    oscAnimFrame = requestAnimationFrame(draw)
+  }
+  draw()
+
+  return () => cancelAnimationFrame(oscAnimFrame)
 }
 
 // ── Transport handlers ────────────────────────────────────────────────────────
@@ -186,6 +260,12 @@ async function handleStart() {
     e.setMotion(params.motion)
     e.setDensity(params.density)
     await e.start()
+    // Apply texture params after start (engine now initialized)
+    e.setGrain(params.grain)
+    e.setRust(params.rust)
+    e.setHum(params.hum)
+    e.setFracture(params.fracture)
+    e.setSpace(params.space)
     isRunning.value = true
   } catch (err) {
     console.error('[DroneEngine] start failed:', err)
@@ -208,28 +288,36 @@ function handleRandomize() {
   params.darkness = p.darkness
   params.motion = p.motion
   params.density = p.density
+  params.mode = 'MANUAL'
   activePreset.value = null
 }
 
-// ── Slider handlers ───────────────────────────────────────────────────────────
-function setVolume(v: number) {
-  params.volume = v
-  engine?.setVolume(v)
-}
+// ── Param handlers ────────────────────────────────────────────────────────────
+function setVolume(v: number) { params.volume = v; engine?.setVolume(v) }
+function setDarkness(v: number) { params.darkness = v; engine?.setDarkness(v) }
+function setMotion(v: number) { params.motion = v; engine?.setMotion(v) }
+function setDensity(v: number) { params.density = v; engine?.setDensity(v) }
+function setGrain(v: number) { params.grain = v; engine?.setGrain(v) }
+function setRust(v: number) { params.rust = v; engine?.setRust(v) }
+function setHum(v: number) { params.hum = v; engine?.setHum(v) }
+function setFracture(v: number) { params.fracture = v; engine?.setFracture(v) }
+function setSpace(v: number) { params.space = v; engine?.setSpace(v) }
 
-function setDarkness(v: number) {
-  params.darkness = v
-  engine?.setDarkness(v)
-}
-
-function setMotion(v: number) {
-  params.motion = v
-  engine?.setMotion(v)
-}
-
-function setDensity(v: number) {
-  params.density = v
-  engine?.setDensity(v)
+function setMode(mode: string) {
+  params.mode = mode as SoundMode
+  const e = getEngine()
+  e.setMode(mode as SoundMode)
+  // Sync all params from engine after mode applies
+  const p = e.currentParams
+  params.darkness = p.darkness
+  params.motion = p.motion
+  params.density = p.density
+  params.grain = p.grain
+  params.rust = p.rust
+  params.hum = p.hum
+  params.fracture = p.fracture
+  params.space = p.space
+  activePreset.value = null
 }
 
 // ── Preset handlers ───────────────────────────────────────────────────────────
@@ -251,6 +339,12 @@ function loadPreset(name: string) {
     params.darkness = p.darkness
     params.motion = p.motion
     params.density = p.density
+    params.grain = p.grain
+    params.rust = p.rust
+    params.hum = p.hum
+    params.fracture = p.fracture
+    params.space = p.space
+    params.mode = e.currentMode
     activePreset.value = name
   }
 }
@@ -267,7 +361,6 @@ function handleStartRecord() {
   engine.startRecording()
   isRecording.value = true
   recordingElapsed.value = 0
-  // Tick the elapsed counter every second
   recElapsedInterval = window.setInterval(() => {
     recordingElapsed.value = engine?.recordingElapsed ?? 0
   }, 1000)
@@ -277,23 +370,32 @@ async function handleStopRecord() {
   if (!engine) return
   clearInterval(recElapsedInterval)
   recElapsedInterval = 0
-  await engine.stopRecording() // auto-downloads the file
+  await engine.stopRecording()
   isRecording.value = false
   recordingElapsed.value = 0
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
-let stopBg: (() => void) | undefined
+let stopOsc: (() => void) | undefined
 
 onMounted(() => {
-  stopBg = startBgAnimation() ?? undefined
-  visInterval = window.setInterval(updateVisBars, 80)
+  drawGrid()
+  window.addEventListener('resize', drawGrid)
+
+  stopOsc = startOscilloscope() ?? undefined
+
+  // Cycle status messages
+  statusInterval = window.setInterval(() => {
+    statusMsgIdx.value++
+  }, 4200)
+
   refreshPresets()
 })
 
 onUnmounted(() => {
-  stopBg?.()
-  clearInterval(visInterval)
+  stopOsc?.()
+  window.removeEventListener('resize', drawGrid)
+  clearInterval(statusInterval)
   clearInterval(recElapsedInterval)
   engine?.dispose()
   engine = null
