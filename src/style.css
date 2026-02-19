@@ -1,0 +1,405 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Global styles – Cinematic Drone Engine
+   Dark industrial palette. No animations that hint at rhythm.
+───────────────────────────────────────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* Palette */
+  --clr-bg:         #080a0d;
+  --clr-surface:    #0e1117;
+  --clr-surface-2:  #141820;
+  --clr-border:     #1e2535;
+  --clr-text:       #c8cdd8;
+  --clr-text-dim:   #5a6278;
+  --clr-accent:     #3d5afe;
+  --clr-accent-dim: #1a2a7a;
+  --clr-glow:       rgba(61, 90, 254, 0.18);
+  --clr-danger:     #cf3737;
+
+  /* Type */
+  --font-sans: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+
+  /* Spacing */
+  --gap:    1.5rem;
+  --radius: 6px;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html, body {
+  height: 100%;
+  background: var(--clr-bg);
+  overflow: hidden;
+}
+
+body {
+  color: var(--clr-text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+#app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   App shell
+───────────────────────────────────────────────────────────────────────────── */
+
+.app {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100vh;
+  overflow-y: auto;
+  padding: var(--gap);
+  gap: var(--gap);
+}
+
+.bg-canvas {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.app-header {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding-top: 1rem;
+  user-select: none;
+}
+
+.app-subtitle {
+  font-size: clamp(1rem, 3vw, 1.35rem);
+  font-family: var(--font-mono);
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--clr-text);
+  font-weight: 300;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--clr-text-dim);
+  transition: background 0.6s ease, box-shadow 0.6s ease;
+}
+.status-dot.active {
+  background: var(--clr-accent);
+  box-shadow: 0 0 8px var(--clr-accent);
+}
+
+.status-text {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  color: var(--clr-text-dim);
+  text-transform: uppercase;
+}
+
+/* ── Visualiser ──────────────────────────────────────────────────────────── */
+
+.visualiser {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 64px;
+  width: min(480px, 100%);
+  padding: 0 4px;
+}
+
+.vis-bar {
+  flex: 1;
+  min-height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(to top, var(--clr-accent-dim), var(--clr-accent));
+  opacity: 0.55;
+  transition: height 0.18s ease-out;
+}
+
+.running .vis-bar {
+  opacity: 0.8;
+}
+
+/* ── Controls panel ──────────────────────────────────────────────────────── */
+
+.controls {
+  position: relative;
+  z-index: 1;
+  width: min(560px, 100%);
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius);
+  padding: var(--gap);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+/* ── Transport ───────────────────────────────────────────────────────────── */
+
+.transport {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1.1rem;
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius);
+  background: var(--clr-surface-2);
+  color: var(--clr-text);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--clr-accent);
+  background: var(--clr-accent-dim);
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.btn-primary.active {
+  border-color: var(--clr-accent);
+  box-shadow: 0 0 12px var(--clr-glow);
+  color: #fff;
+}
+
+.btn-accent {
+  margin-left: auto;
+}
+
+.btn-icon {
+  font-size: 0.85em;
+  line-height: 1;
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: var(--clr-border);
+}
+.btn-ghost:hover:not(:disabled) {
+  border-color: var(--clr-accent);
+  background: var(--clr-accent-dim);
+}
+
+/* ── Sliders (knob grid) ─────────────────────────────────────────────────── */
+
+.sliders {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+}
+
+@media (max-width: 480px) {
+  .sliders { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ── Knob ────────────────────────────────────────────────────────────────── */
+
+.knob-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  user-select: none;
+}
+
+.knob-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--clr-text-dim);
+  cursor: pointer;
+}
+
+.knob-ring-wrap {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.knob-ring {
+  width: 100%;
+  height: 100%;
+}
+
+.arc-track {
+  stroke: var(--clr-border);
+}
+
+.arc-value {
+  stroke: var(--clr-accent);
+  filter: drop-shadow(0 0 3px var(--clr-accent));
+}
+
+.arc-dot {
+  fill: #fff;
+  filter: drop-shadow(0 0 4px var(--clr-accent));
+}
+
+.knob-pct {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--clr-text-dim);
+  pointer-events: none;
+}
+
+/* Range input – visually hidden, used only for keyboard + screen readers */
+.knob-range-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.knob-sublabel {
+  font-size: 0.62rem;
+  color: var(--clr-text-dim);
+  text-align: center;
+  max-width: 70px;
+  line-height: 1.3;
+}
+
+/* ── Preset panel ────────────────────────────────────────────────────────── */
+
+.preset-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.preset-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.preset-input {
+  flex: 1;
+  padding: 0.45rem 0.7rem;
+  background: var(--clr-surface-2);
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius);
+  color: var(--clr-text);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.preset-input:focus {
+  border-color: var(--clr-accent);
+}
+.preset-input::placeholder { color: var(--clr-text-dim); }
+
+.preset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.preset-item {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--clr-surface-2);
+  transition: border-color 0.15s;
+}
+.preset-item.selected {
+  border-color: var(--clr-accent);
+  box-shadow: 0 0 6px var(--clr-glow);
+}
+
+.preset-load {
+  padding: 0.3rem 0.65rem;
+  background: transparent;
+  border: none;
+  color: var(--clr-text);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: color 0.12s;
+}
+.preset-load:hover { color: #fff; }
+
+.preset-delete {
+  padding: 0.3rem 0.5rem;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--clr-border);
+  color: var(--clr-text-dim);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.preset-delete:hover {
+  color: var(--clr-danger);
+  background: rgba(207, 55, 55, 0.08);
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+
+.app-footer {
+  position: relative;
+  z-index: 1;
+  margin-top: auto;
+  padding-bottom: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  color: var(--clr-text-dim);
+  text-align: center;
+}
