@@ -143,7 +143,7 @@ export class DroneEngine {
   private _initialized = false
   private _running = false
 
-  private _volume = 0.7
+  private _volume = 0.85
   private _darkness = 0.45
   private _motion = 0.4
   private _density = 0.45
@@ -159,7 +159,7 @@ export class DroneEngine {
   // ── Master chain nodes (created lazily in _initialize) ────────────────────
   private masterGain!: Tone.Gain
   private masterFilter!: Tone.Filter
-  private masterReverb!: Tone.Reverb
+  private masterReverb!: Tone.Freeverb
   private masterLimiter!: Tone.Limiter
 
   // ── Layers ────────────────────────────────────────────────────────────────
@@ -231,11 +231,12 @@ export class DroneEngine {
     this.masterGain = new Tone.Gain(this._volume)
     this.masterFilter = new Tone.Filter({
       type: 'lowpass',
-      frequency: darknessToCutoff(this._darkness),
+      frequency: Math.max(20, darknessToCutoff(this._darkness)),
       Q: 0.8,
     })
-    this.masterReverb = new Tone.Reverb({ decay: 12, wet: 0.42, preDelay: 0.08 })
-    this.masterLimiter = new Tone.Limiter(-2)
+    // Freeverb = algorithmic reverb, no IR generation, starts instantly
+    this.masterReverb = new Tone.Freeverb({ roomSize: 0.75, dampening: 3000, wet: 0.42 })
+    this.masterLimiter = new Tone.Limiter(-1)
 
     // ── Layers ──────────────────────────────────────────────────────────────
     this.subLayer = new SubLayer()
@@ -296,12 +297,6 @@ export class DroneEngine {
     this._applyDarkness(this._darkness, false)
     this._applyDensity(this._density, false)
     this._applyMotion(this._motion, false)
-
-    // ── Await async nodes ──────────────────────────────────────────────────
-    await Promise.all([
-      this.masterReverb.ready,
-      this.sciFiLayer.ready,
-    ])
 
     this._initialized = true
 
@@ -511,11 +506,10 @@ export class DroneEngine {
     this._midFreq = newMidFreq
     this._airFreq = newAirFreq
 
-    this.subLayer.setBaseFrequency(newSubFreq, 8)
-    this.midLayer.setBaseFrequency(newMidFreq, 8)
-    this.sciFiLayer.setBaseFrequency(newAirFreq, 10)
+    this.subLayer.setBaseFrequency(newSubFreq, 3)
+    this.midLayer.setBaseFrequency(newMidFreq, 3)
+    this.sciFiLayer.setBaseFrequency(newAirFreq, 4)
 
-    // Update random-walk modulator ranges to stay around new freqs
     this.subPitchWalker.setRange(
       Math.max(28, newSubFreq - 12),
       Math.min(65, newSubFreq + 12),
@@ -525,9 +519,8 @@ export class DroneEngine {
       Math.min(560, newAirFreq + 60),
     )
 
-    // Randomise reverb wet slightly
     const reverbWet = rand(0.3, 0.65)
-    this.masterReverb.wet.rampTo(reverbWet, 6)
+    this.masterReverb.wet.rampTo(reverbWet, 2)
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -645,32 +638,30 @@ export class DroneEngine {
 
   private _applyDarkness(d: number, ramp: boolean): void {
     if (!this._initialized) return
-    const cutoff = darknessToCutoff(d)
-    const time = ramp ? 3 : 0
+    const cutoff = Math.max(20, darknessToCutoff(d))
+    const time = ramp ? 0.8 : 0.05
     this.masterFilter.frequency.rampTo(cutoff, time)
 
     // Shift mid-layer filter in the same direction (but less dramatically)
-    const midCutoff = darknessToCutoff(d * 0.7) * 0.5
+    // Clamp to >= 20 Hz so exponential ramp never gets a zero value
+    const midCutoff = Math.max(20, darknessToCutoff(d * 0.65) * 0.6)
     this.midLayer.setFilterFrequency(midCutoff, time)
   }
 
   private _applyMotion(m: number, ramp: boolean): void {
     if (!this._initialized) return
     const rate = motionToRate(m)
-    const depth = 0.2 + m * 0.8 // 0.2–1.0 depth multiplier
+    const depth = 0.2 + m * 0.8
 
-    // LFO rates
-    this.subLayer.setPitchLFORate(rate * 0.5) // sub drifts slower
+    this.subLayer.setPitchLFORate(rate * 0.5)
     this.midLayer.setFilterLFORate(rate * 0.8)
     this.industrialLayer.setAMLFORate(rate * 0.6)
     this.sciFiLayer.setPanLFORate(rate * 0.7)
 
-    // LFO depths
-    this.subLayer.setPitchLFODepth(3 + depth * 9)        // ±3–12 Hz
-    this.midLayer.setFilterLFODepth(40 + depth * 200)    // ±40–240 Hz
-    this.sciFiLayer.setShimmerDepth(1 + depth * 5)       // ±1–6 Hz
+    this.subLayer.setPitchLFODepth(3 + depth * 9)
+    this.midLayer.setFilterLFODepth(40 + depth * 200)
+    this.sciFiLayer.setShimmerDepth(1 + depth * 5)
 
-    // Random-walk rates
     const walkRate = 0.005 + m * 0.015
     if (ramp) {
       this.subPitchWalker.setRate(walkRate)
