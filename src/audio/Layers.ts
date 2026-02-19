@@ -88,6 +88,11 @@ export class SubLayer {
     this.pitchLFO.max = halfRange
   }
 
+  /** Saturation/distortion amount 0–1 (maps to 0–0.9). */
+  setDistortionAmount(amount: number): void {
+    this.saturation.distortion = Math.max(0, Math.min(0.9, amount * 0.9))
+  }
+
   dispose(): void {
     this.osc.dispose()
     this.saturation.dispose()
@@ -276,6 +281,16 @@ export class IndustrialTextureLayer {
     this.amLFO.frequency.rampTo(Math.max(0.005, Math.min(0.1, hz)), 4)
   }
 
+  /** Distortion grit amount 0–1. */
+  setDistortionAmount(amount: number): void {
+    this.distortion.distortion = Math.max(0, Math.min(1, amount))
+  }
+
+  /** Band-pass Q factor. Higher = more resonant/aggressive. */
+  setBandQ(q: number): void {
+    this.bpFilter.Q.rampTo(Math.max(0.5, Math.min(12, q)), 3)
+  }
+
   dispose(): void {
     this.noise.dispose()
     this.bpFilter.dispose()
@@ -366,6 +381,11 @@ export class SciFiAirLayer {
   setShimmerDepth(halfRange: number): void {
     this.shimmerLFO.min = -halfRange
     this.shimmerLFO.max = halfRange
+  }
+
+  /** Per-layer reverb wet mix 0–1. */
+  setReverbWet(wet: number): void {
+    this.layerReverb.wet.rampTo(Math.max(0, Math.min(1, wet)), 4)
   }
 
   dispose(): void {
