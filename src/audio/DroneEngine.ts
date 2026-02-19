@@ -19,11 +19,17 @@
  *   getPresetNames() → str[] – list saved presets
  *   deletePreset(name)       – remove from localStorage
  *   isRunning → boolean
+ *
+ * Recording API (real-time capture → browser download):
+ *   startRecording()         – tap post-limiter signal into MediaRecorder
+ *   stopRecording() → blob  – finalise and auto-download timestamped file
+ *   isRecording → boolean
  */
 
 import * as Tone from 'tone'
 import { SubLayer, MidCinematicLayer, IndustrialTextureLayer, SciFiAirLayer } from './Layers'
 import { RandomWalkModulator } from './Modulators'
+import { RecordingEngine } from './RecordingEngine'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Preset schema
@@ -103,6 +109,9 @@ export class DroneEngine {
   private airFreqWalker!: RandomWalkModulator
   private industrialBandWalker!: RandomWalkModulator
 
+  // ── Recording ─────────────────────────────────────────────────────────────
+  private readonly recEngine = new RecordingEngine()
+
   // ── Per-parameter cache for preset/randomize ──────────────────────────────
   private _subFreq = 42
   private _midFreq = 80
@@ -114,6 +123,14 @@ export class DroneEngine {
   }
   get isInitialized(): boolean {
     return this._initialized
+  }
+
+  get isRecording(): boolean {
+    return this.recEngine.isRecording
+  }
+
+  get recordingElapsed(): number {
+    return this.recEngine.elapsedSeconds
   }
 
   get currentParams() {
@@ -417,6 +434,36 @@ export class DroneEngine {
     const presets = this._loadAllPresets()
     delete presets[name]
     localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(presets))
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Recording API
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Tap the post-limiter output into a MediaRecorder.
+   * The engine must be initialised (i.e. start() must have been called at
+   * least once) before recording is possible.
+   * Safe to call even while the drone is playing – no audible interruption.
+   */
+  startRecording(): void {
+    if (!this._initialized) {
+      console.warn('[DroneEngine] Cannot record before the engine is started.')
+      return
+    }
+    this.recEngine.start(this.masterLimiter)
+  }
+
+  /**
+   * Stop the MediaRecorder, finalize the Blob, and trigger a browser download.
+   * Returns the raw Blob in case the caller wants to handle it differently.
+   */
+  async stopRecording(): Promise<Blob | null> {
+    const blob = await this.recEngine.stop()
+    if (blob) {
+      RecordingEngine.download(blob, 'drone')
+    }
+    return blob
   }
 
   private _loadAllPresets(): Record<string, DronePreset> {

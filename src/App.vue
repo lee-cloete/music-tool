@@ -33,6 +33,8 @@
       :density="params.density"
       :preset-names="presetNames"
       :active-preset="activePreset"
+      :is-recording="isRecording"
+      :recording-elapsed="recordingElapsed"
       @start="handleStart"
       @stop="handleStop"
       @randomize="handleRandomize"
@@ -43,6 +45,8 @@
       @save-preset="savePreset"
       @load-preset="loadPreset"
       @delete-preset="deletePreset"
+      @start-record="handleStartRecord"
+      @stop-record="handleStopRecord"
     />
 
     <!-- ── Footer ────────────────────────────────────────────────────────── -->
@@ -87,6 +91,11 @@ const params = reactive({
 
 const presetNames = ref<string[]>([])
 const activePreset = ref<string | null>(null)
+
+// ── Recording state ───────────────────────────────────────────────────────────
+const isRecording = ref(false)
+const recordingElapsed = ref(0)
+let recElapsedInterval = 0
 
 const statusLabel = computed(() => {
   if (isStarting.value) return 'Initialising audio…'
@@ -252,6 +261,27 @@ function deletePreset(name: string) {
   refreshPresets()
 }
 
+// ── Recording handlers ────────────────────────────────────────────────────────
+function handleStartRecord() {
+  if (!engine || !isRunning.value) return
+  engine.startRecording()
+  isRecording.value = true
+  recordingElapsed.value = 0
+  // Tick the elapsed counter every second
+  recElapsedInterval = window.setInterval(() => {
+    recordingElapsed.value = engine?.recordingElapsed ?? 0
+  }, 1000)
+}
+
+async function handleStopRecord() {
+  if (!engine) return
+  clearInterval(recElapsedInterval)
+  recElapsedInterval = 0
+  await engine.stopRecording() // auto-downloads the file
+  isRecording.value = false
+  recordingElapsed.value = 0
+}
+
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 let stopBg: (() => void) | undefined
 
@@ -264,6 +294,7 @@ onMounted(() => {
 onUnmounted(() => {
   stopBg?.()
   clearInterval(visInterval)
+  clearInterval(recElapsedInterval)
   engine?.dispose()
   engine = null
 })

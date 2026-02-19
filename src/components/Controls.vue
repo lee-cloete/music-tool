@@ -80,6 +80,33 @@
 
     </div>
 
+    <!-- ── Record row ─────────────────────────────────────────────────────── -->
+    <div class="record-row">
+      <!-- Record / Stop-recording toggle -->
+      <button
+        class="btn btn-record"
+        :class="{ recording: isRecording }"
+        :disabled="!isRunning && !isRecording"
+        @click="isRecording ? $emit('stop-record') : $emit('start-record')"
+        :aria-label="isRecording ? 'Stop recording' : 'Start recording'"
+        :title="isRecording ? 'Stop and download recording' : 'Record audio output'"
+      >
+        <span class="rec-dot" :class="{ active: isRecording }" aria-hidden="true" />
+        <span class="btn-label">{{ isRecording ? 'Stop Rec' : 'Record' }}</span>
+      </button>
+
+      <!-- Elapsed time counter (only visible while recording) -->
+      <Transition name="fade">
+        <span v-if="isRecording" class="rec-timer" aria-live="polite">
+          {{ elapsedDisplay }}
+        </span>
+      </Transition>
+
+      <span v-if="!isRunning && !isRecording" class="rec-hint">
+        Start the engine to record
+      </span>
+    </div>
+
     <!-- ── Preset panel ───────────────────────────────────────────────────── -->
     <div class="preset-panel">
       <div class="preset-row">
@@ -123,7 +150,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import ControlKnob from './ControlKnob.vue'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -136,6 +163,8 @@ const props = defineProps<{
   density: number
   presetNames: string[]
   activePreset: string | null
+  isRecording: boolean
+  recordingElapsed: number
 }>()
 
 // ── Emits ─────────────────────────────────────────────────────────────────────
@@ -150,6 +179,8 @@ const emit = defineEmits<{
   'save-preset': [name: string]
   'load-preset': [name: string]
   'delete-preset': [name: string]
+  'start-record': []
+  'stop-record': []
 }>()
 
 // ── Local state ───────────────────────────────────────────────────────────────
@@ -161,4 +192,14 @@ function handleSave() {
   emit('save-preset', name)
   presetNameInput.value = ''
 }
+
+// ── Elapsed time formatting ───────────────────────────────────────────────────
+// recordingElapsed is kept up-to-date by a setInterval in App.vue (polling
+// the engine every second so the reactive ref updates and Vue re-renders).
+const elapsedDisplay = computed(() => {
+  const secs = props.recordingElapsed
+  const m = Math.floor(secs / 60)
+  const s = Math.floor(secs % 60)
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+})
 </script>
