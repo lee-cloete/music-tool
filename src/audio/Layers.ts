@@ -1,16 +1,16 @@
 /**
  * Layers.ts
  *
- * Four independent timbral layers for the Cinematic Drone Engine:
+ * Four independent timbral layers for the Leelulz Drone Manufacturing Plant.
  *
  *  1. SubLayer           – sine bass, slow pitch drift, subtle saturation
- *  2. MidCinematicLayer  – detuned saws, LPF, long envelope
+ *  2. MidCinematicLayer  – detuned saws, LPF, fast envelope
  *  3. IndustrialTextureLayer – pink noise, BPF, distortion, AM
- *  4. SciFiAirLayer      – triangle shimmer, slow panning, extra reverb
+ *  4. SciFiAirLayer      – triangle shimmer, slow panning, algorithmic reverb
  *
- * Each layer exposes connect(), start(), stop(), and dispose().
- * Gain control is split into two nodes so that a level-control ramp
- * and an LFO (where applicable) never interfere.
+ * Design: oscillators/sources are started ONCE and never stopped.
+ * stop() only ramps the layer gain to 0; start() ramps it back up.
+ * This allows instant, click-free stop/start cycling.
  */
 
 import * as Tone from 'tone'
@@ -25,25 +25,17 @@ export class SubLayer {
   private readonly levelGain: Tone.Gain
   private readonly pitchLFO: Tone.LFO
 
-  // Keep base freq so modulation can offset it
   private baseFreq = 42
+  private _started = false
 
   constructor() {
     this.osc = new Tone.Oscillator({ type: 'sine', frequency: this.baseFreq })
-
-    // Very subtle saturation (tape-warm character)
     this.saturation = new Tone.Distortion({ distortion: 0.04, oversample: '4x' })
-
     this.levelGain = new Tone.Gain(0)
-
-    // Pitch drift: 0.01 Hz, ±6 Hz around centre
     this.pitchLFO = new Tone.LFO({ frequency: 0.01, min: -6, max: 6, type: 'sine' })
 
-    // Signal chain
     this.osc.connect(this.saturation)
     this.saturation.connect(this.levelGain)
-
-    // Additive LFO on frequency signal
     this.pitchLFO.connect(this.osc.frequency as unknown as Tone.InputNode)
   }
 
@@ -53,36 +45,34 @@ export class SubLayer {
   }
 
   start(): void {
-    this.osc.start()
-    this.pitchLFO.start()
-    this.levelGain.gain.rampTo(0.28, 3)
+    if (!this._started) {
+      this.osc.start()
+      this.pitchLFO.start()
+      this._started = true
+    }
+    this.levelGain.gain.rampTo(0.32, 0.6)
   }
 
   stop(): void {
-    this.levelGain.gain.rampTo(0, 3)
-    // Stop sources after fade
-    const stopTime = Tone.now() + 3.5
-    this.osc.stop(stopTime)
-    this.pitchLFO.stop(stopTime)
+    // Only mute – oscillators keep running so restart is instant
+    this.levelGain.gain.rampTo(0, 0.35)
   }
 
   // ── Parameter controls ────────────────────────────────────────────────────
 
-  setBaseFrequency(hz: number, ramp = 6): void {
-    this.baseFreq = hz
-    this.osc.frequency.rampTo(hz, ramp)
+  setBaseFrequency(hz: number, ramp = 4): void {
+    this.baseFreq = Math.max(1, hz)
+    this.osc.frequency.rampTo(this.baseFreq, ramp)
   }
 
-  setLevel(value: number, ramp = 2): void {
-    this.levelGain.gain.rampTo(value, ramp)
+  setLevel(value: number, ramp = 1): void {
+    this.levelGain.gain.rampTo(Math.max(0, value), ramp)
   }
 
-  /** Set LFO rate (Hz) – must stay 0.005–0.1 */
   setPitchLFORate(hz: number): void {
-    this.pitchLFO.frequency.rampTo(Math.max(0.005, Math.min(0.1, hz)), 4)
+    this.pitchLFO.frequency.rampTo(Math.max(0.005, Math.min(0.1, hz)), 2)
   }
 
-  /** Depth: half-range in Hz (e.g. 10 → ±10 Hz) */
   setPitchLFODepth(halfRange: number): void {
     this.pitchLFO.min = -halfRange
     this.pitchLFO.max = halfRange
@@ -114,39 +104,34 @@ export class MidCinematicLayer {
   private readonly filterLFO: Tone.LFO
 
   private baseFreq = 80
+  private _started = false
 
   constructor() {
     this.osc1 = new Tone.Oscillator({ type: 'sawtooth', frequency: this.baseFreq })
     this.osc2 = new Tone.Oscillator({ type: 'sawtooth', frequency: this.baseFreq })
 
-    // Default detune ±8 cents
     this.osc1.detune.value = -8
     this.osc2.detune.value = 8
 
     this.filter = new Tone.Filter({ type: 'lowpass', frequency: 500, Q: 1.2 })
 
-    // Long cinematic envelope
+    // Shorter envelope for responsive stop/start
     this.envelope = new Tone.AmplitudeEnvelope({
-      attack: 6,
+      attack: 1.5,
       attackCurve: 'linear',
       decay: 0.1,
       sustain: 1,
-      release: 10,
+      release: 2.5,
       releaseCurve: 'exponential',
     })
 
-    this.levelGain = new Tone.Gain(0.38)
-
-    // Slow filter sweep: 0.03 Hz, ±120 Hz around centre
+    this.levelGain = new Tone.Gain(0.42)
     this.filterLFO = new Tone.LFO({ frequency: 0.03, min: -120, max: 120, type: 'sine' })
 
-    // Signal chain
     this.osc1.connect(this.filter)
     this.osc2.connect(this.filter)
     this.filter.connect(this.envelope)
     this.envelope.connect(this.levelGain)
-
-    // Additive LFO on filter frequency
     this.filterLFO.connect(this.filter.frequency as unknown as Tone.InputNode)
   }
 
@@ -156,42 +141,42 @@ export class MidCinematicLayer {
   }
 
   start(): void {
-    this.osc1.start()
-    this.osc2.start()
-    this.filterLFO.start()
+    if (!this._started) {
+      this.osc1.start()
+      this.osc2.start()
+      this.filterLFO.start()
+      this._started = true
+    }
     this.envelope.triggerAttack()
   }
 
   stop(): void {
     this.envelope.triggerRelease()
-    // Give the release time to complete before cutting sources
-    const stopTime = Tone.now() + 12
-    this.osc1.stop(stopTime)
-    this.osc2.stop(stopTime)
-    this.filterLFO.stop(stopTime)
+    // Oscillators stay running for fast restart
   }
 
   // ── Parameter controls ────────────────────────────────────────────────────
 
-  setBaseFrequency(hz: number, ramp = 6): void {
-    this.baseFreq = hz
-    this.osc1.frequency.rampTo(hz, ramp)
-    this.osc2.frequency.rampTo(hz, ramp)
+  setBaseFrequency(hz: number, ramp = 4): void {
+    this.baseFreq = Math.max(1, hz)
+    this.osc1.frequency.rampTo(this.baseFreq, ramp)
+    this.osc2.frequency.rampTo(this.baseFreq, ramp)
   }
 
-  /** Amount in cents (applied symmetrically ±cents/2 each oscillator) */
-  setDetune(cents: number, ramp = 4): void {
+  setDetune(cents: number, ramp = 2): void {
     const half = cents / 2
     this.osc1.detune.rampTo(-half, ramp)
     this.osc2.detune.rampTo(half, ramp)
   }
 
-  setFilterFrequency(hz: number, ramp = 4): void {
-    this.filter.frequency.rampTo(hz, ramp)
+  setFilterFrequency(hz: number, ramp = 2): void {
+    const safeHz = Math.max(20, hz)
+    const safeRamp = Math.max(0.05, ramp)
+    this.filter.frequency.rampTo(safeHz, safeRamp)
   }
 
   setFilterLFORate(hz: number): void {
-    this.filterLFO.frequency.rampTo(Math.max(0.005, Math.min(0.1, hz)), 4)
+    this.filterLFO.frequency.rampTo(Math.max(0.005, Math.min(0.1, hz)), 2)
   }
 
   setFilterLFODepth(halfRange: number): void {
@@ -217,35 +202,24 @@ export class IndustrialTextureLayer {
   private readonly noise: Tone.Noise
   private readonly bpFilter: Tone.Filter
   private readonly distortion: Tone.Distortion
-  // amGain is modulated by the LFO (additive), levelGain controls fade in/out
   private readonly amGain: Tone.Gain
   private readonly levelGain: Tone.Gain
   private readonly amLFO: Tone.LFO
 
+  private _started = false
+
   constructor() {
     this.noise = new Tone.Noise({ type: 'pink' })
-
     this.bpFilter = new Tone.Filter({ type: 'bandpass', frequency: 700, Q: 2.5 })
-
-    // Light grit
     this.distortion = new Tone.Distortion({ distortion: 0.18, oversample: '2x' })
-
-    // amGain base 0.6; LFO adds ±0.25 → oscillates 0.35–0.85
     this.amGain = new Tone.Gain(0.6)
-
-    // Overall level (very low – texture only)
     this.levelGain = new Tone.Gain(0)
-
-    // AM: 0.02 Hz sine
     this.amLFO = new Tone.LFO({ frequency: 0.02, min: -0.25, max: 0.25, type: 'sine' })
 
-    // Signal chain
     this.noise.connect(this.bpFilter)
     this.bpFilter.connect(this.distortion)
     this.distortion.connect(this.amGain)
     this.amGain.connect(this.levelGain)
-
-    // Additive AM LFO on inner gain
     this.amLFO.connect(this.amGain.gain as unknown as Tone.InputNode)
   }
 
@@ -255,30 +229,30 @@ export class IndustrialTextureLayer {
   }
 
   start(): void {
-    this.noise.start()
-    this.amLFO.start()
-    this.levelGain.gain.rampTo(0.06, 4)
+    if (!this._started) {
+      this.noise.start()
+      this.amLFO.start()
+      this._started = true
+    }
+    this.levelGain.gain.rampTo(0.06, 0.8)
   }
 
   stop(): void {
-    this.levelGain.gain.rampTo(0, 2)
-    const stopTime = Tone.now() + 2.5
-    this.noise.stop(stopTime)
-    this.amLFO.stop(stopTime)
+    this.levelGain.gain.rampTo(0, 0.35)
   }
 
   // ── Parameter controls ────────────────────────────────────────────────────
 
-  setLevel(value: number, ramp = 2): void {
-    this.levelGain.gain.rampTo(value, ramp)
+  setLevel(value: number, ramp = 1): void {
+    this.levelGain.gain.rampTo(Math.max(0, value), ramp)
   }
 
-  setBandFrequency(hz: number, ramp = 4): void {
-    this.bpFilter.frequency.rampTo(hz, ramp)
+  setBandFrequency(hz: number, ramp = 2): void {
+    this.bpFilter.frequency.rampTo(Math.max(20, hz), ramp)
   }
 
   setAMLFORate(hz: number): void {
-    this.amLFO.frequency.rampTo(Math.max(0.005, Math.min(0.1, hz)), 4)
+    this.amLFO.frequency.rampTo(Math.max(0.005, Math.min(0.1, hz)), 2)
   }
 
   /** Distortion grit amount 0–1. */
@@ -288,7 +262,7 @@ export class IndustrialTextureLayer {
 
   /** Band-pass Q factor. Higher = more resonant/aggressive. */
   setBandQ(q: number): void {
-    this.bpFilter.Q.rampTo(Math.max(0.5, Math.min(12, q)), 3)
+    this.bpFilter.Q.rampTo(Math.max(0.5, Math.min(12, q)), 2)
   }
 
   dispose(): void {
@@ -308,40 +282,29 @@ export class IndustrialTextureLayer {
 export class SciFiAirLayer {
   private readonly osc: Tone.Oscillator
   private readonly panner: Tone.Panner
-  // Per-layer long reverb – makes this layer noticeably more spacious
-  private readonly layerReverb: Tone.Reverb
+  // Freeverb: instant init (algorithmic, no IR generation)
+  private readonly layerReverb: Tone.Freeverb
   private readonly levelGain: Tone.Gain
   private readonly panLFO: Tone.LFO
   private readonly shimmerLFO: Tone.LFO
 
-  /** Promise that resolves when the impulse response is ready. */
-  readonly ready: Promise<void>
+  private _started = false
 
   constructor() {
     this.osc = new Tone.Oscillator({ type: 'triangle', frequency: 320 })
-
     this.panner = new Tone.Panner(0)
-
-    this.layerReverb = new Tone.Reverb({ decay: 14, wet: 0.75, preDelay: 0.05 })
-
+    this.layerReverb = new Tone.Freeverb({ roomSize: 0.9, dampening: 1800, wet: 0.72 })
     this.levelGain = new Tone.Gain(0)
 
-    // Pan LFO: 0.02 Hz, full stereo sweep
     this.panLFO = new Tone.LFO({ frequency: 0.018, min: -0.85, max: 0.85, type: 'sine' })
-
-    // Shimmer: 0.05 Hz, ±3 Hz frequency detune
     this.shimmerLFO = new Tone.LFO({ frequency: 0.05, min: -3, max: 3, type: 'sine' })
 
-    // Signal chain: osc → panner → reverb → levelGain → [output]
     this.osc.connect(this.panner)
     this.panner.connect(this.layerReverb)
     this.layerReverb.connect(this.levelGain)
 
-    // LFOs
     this.panLFO.connect(this.panner.pan as unknown as Tone.InputNode)
     this.shimmerLFO.connect(this.osc.frequency as unknown as Tone.InputNode)
-
-    this.ready = this.layerReverb.ready
   }
 
   connect(destination: Tone.InputNode): this {
@@ -350,32 +313,31 @@ export class SciFiAirLayer {
   }
 
   start(): void {
-    this.osc.start()
-    this.panLFO.start()
-    this.shimmerLFO.start()
-    this.levelGain.gain.rampTo(0.14, 6)
+    if (!this._started) {
+      this.osc.start()
+      this.panLFO.start()
+      this.shimmerLFO.start()
+      this._started = true
+    }
+    this.levelGain.gain.rampTo(0.16, 0.8)
   }
 
   stop(): void {
-    this.levelGain.gain.rampTo(0, 5)
-    const stopTime = Tone.now() + 5.5
-    this.osc.stop(stopTime)
-    this.panLFO.stop(stopTime)
-    this.shimmerLFO.stop(stopTime)
+    this.levelGain.gain.rampTo(0, 0.35)
   }
 
   // ── Parameter controls ────────────────────────────────────────────────────
 
-  setBaseFrequency(hz: number, ramp = 8): void {
-    this.osc.frequency.rampTo(hz, ramp)
+  setBaseFrequency(hz: number, ramp = 4): void {
+    this.osc.frequency.rampTo(Math.max(1, hz), ramp)
   }
 
-  setLevel(value: number, ramp = 4): void {
-    this.levelGain.gain.rampTo(value, ramp)
+  setLevel(value: number, ramp = 1): void {
+    this.levelGain.gain.rampTo(Math.max(0, value), ramp)
   }
 
   setPanLFORate(hz: number): void {
-    this.panLFO.frequency.rampTo(Math.max(0.005, Math.min(0.1, hz)), 4)
+    this.panLFO.frequency.rampTo(Math.max(0.005, Math.min(0.1, hz)), 2)
   }
 
   setShimmerDepth(halfRange: number): void {
@@ -385,7 +347,7 @@ export class SciFiAirLayer {
 
   /** Per-layer reverb wet mix 0–1. */
   setReverbWet(wet: number): void {
-    this.layerReverb.wet.rampTo(Math.max(0, Math.min(1, wet)), 4)
+    this.layerReverb.wet.rampTo(Math.max(0, Math.min(1, wet)), 2)
   }
 
   dispose(): void {

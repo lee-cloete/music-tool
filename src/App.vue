@@ -60,7 +60,7 @@
 
     <!-- ── Footer ────────────────────────────────────────────────────────── -->
     <footer class="app-footer">
-      <span>All audio client-side · No server · No tracking</span>
+      <span>No server · No tracking</span>
     </footer>
 
   </div>
@@ -85,7 +85,7 @@ const isRunning = ref(false)
 const isStarting = ref(false)
 
 const params = reactive({
-  volume: 0.7,
+  volume: 0.85,
   darkness: 0.45,
   motion: 0.4,
   density: 0.45,
