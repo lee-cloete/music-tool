@@ -156,7 +156,7 @@ function drawGrid() {
   const size = 44
 
   ctx.clearRect(0, 0, w, h)
-  ctx.strokeStyle = 'rgba(60, 60, 60, 0.35)'
+  ctx.strokeStyle = 'rgba(50, 50, 50, 0.5)'
   ctx.lineWidth = 0.5
 
   for (let x = 0; x <= w; x += size) {
@@ -197,7 +197,7 @@ function startOscilloscope() {
 
     // Flat line when stopped
     if (!isRunning.value) {
-      ctx.strokeStyle = '#222'
+      ctx.strokeStyle = '#2a2a2a'
       ctx.lineWidth = 1
       ctx.beginPath()
       ctx.moveTo(0, h / 2)
@@ -214,7 +214,7 @@ function startOscilloscope() {
     const frac = params.fracture
     const ts = t * 0.016
 
-    ctx.strokeStyle = '#777'
+    ctx.strokeStyle = '#999'
     ctx.lineWidth = 1
     ctx.beginPath()
     for (let x = 0; x <= w; x++) {
@@ -228,8 +228,8 @@ function startOscilloscope() {
     }
     ctx.stroke()
 
-    // Secondary trace (dimmer, slower)
-    ctx.strokeStyle = '#333'
+    // Secondary trace (ghost layer)
+    ctx.strokeStyle = '#383838'
     ctx.lineWidth = 1
     ctx.beginPath()
     for (let x = 0; x <= w; x++) {
