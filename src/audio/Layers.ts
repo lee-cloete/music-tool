@@ -24,6 +24,7 @@ export class SubLayer {
   private readonly saturation: Tone.Distortion
   private readonly levelGain: Tone.Gain
   private readonly pitchLFO: Tone.LFO
+  private readonly pitchLFOGain: Tone.Gain
 
   private baseFreq = 42
   private _started = false
@@ -33,10 +34,15 @@ export class SubLayer {
     this.saturation = new Tone.Distortion({ distortion: 0.04, oversample: '4x' })
     this.levelGain = new Tone.Gain(0)
     this.pitchLFO = new Tone.LFO({ frequency: 0.01, min: -6, max: 6, type: 'sine' })
+    // Route LFO through a plain Gain so ToneAudioNode.connect is used instead of
+    // Signal.connect. This prevents connectSignal() from marking osc.frequency as
+    // overridden=true, which would break all subsequent rampTo() calls on it.
+    this.pitchLFOGain = new Tone.Gain(1)
 
     this.osc.connect(this.saturation)
     this.saturation.connect(this.levelGain)
-    this.pitchLFO.connect(this.osc.frequency as unknown as Tone.InputNode)
+    this.pitchLFO.connect(this.pitchLFOGain)
+    this.pitchLFOGain.connect(this.osc.frequency as unknown as Tone.InputNode)
   }
 
   connect(destination: Tone.InputNode): this {
@@ -88,6 +94,7 @@ export class SubLayer {
     this.saturation.dispose()
     this.levelGain.dispose()
     this.pitchLFO.dispose()
+    this.pitchLFOGain.dispose()
   }
 }
 
@@ -102,6 +109,7 @@ export class MidCinematicLayer {
   private readonly envelope: Tone.AmplitudeEnvelope
   private readonly levelGain: Tone.Gain
   private readonly filterLFO: Tone.LFO
+  private readonly filterLFOGain: Tone.Gain
 
   private baseFreq = 80
   private _started = false
@@ -127,12 +135,17 @@ export class MidCinematicLayer {
 
     this.levelGain = new Tone.Gain(0.42)
     this.filterLFO = new Tone.LFO({ frequency: 0.03, min: -120, max: 120, type: 'sine' })
+    // Route LFO through a plain Gain (ToneAudioNode, not Signal) so connectSignal()
+    // is not triggered. Without this, filter.frequency gets marked overridden=true,
+    // causing all rampTo() calls on it to throw "Value must be within [0, 0]".
+    this.filterLFOGain = new Tone.Gain(1)
 
     this.osc1.connect(this.filter)
     this.osc2.connect(this.filter)
     this.filter.connect(this.envelope)
     this.envelope.connect(this.levelGain)
-    this.filterLFO.connect(this.filter.frequency as unknown as Tone.InputNode)
+    this.filterLFO.connect(this.filterLFOGain)
+    this.filterLFOGain.connect(this.filter.frequency as unknown as Tone.InputNode)
   }
 
   connect(destination: Tone.InputNode): this {
@@ -191,6 +204,7 @@ export class MidCinematicLayer {
     this.envelope.dispose()
     this.levelGain.dispose()
     this.filterLFO.dispose()
+    this.filterLFOGain.dispose()
   }
 }
 
@@ -287,6 +301,7 @@ export class SciFiAirLayer {
   private readonly levelGain: Tone.Gain
   private readonly panLFO: Tone.LFO
   private readonly shimmerLFO: Tone.LFO
+  private readonly shimmerLFOGain: Tone.Gain
 
   private _started = false
 
@@ -298,13 +313,17 @@ export class SciFiAirLayer {
 
     this.panLFO = new Tone.LFO({ frequency: 0.018, min: -0.85, max: 0.85, type: 'sine' })
     this.shimmerLFO = new Tone.LFO({ frequency: 0.05, min: -3, max: 3, type: 'sine' })
+    // Route shimmerLFO through a plain Gain so ToneAudioNode.connect is used,
+    // preventing connectSignal() from marking osc.frequency as overridden=true.
+    this.shimmerLFOGain = new Tone.Gain(1)
 
     this.osc.connect(this.panner)
     this.panner.connect(this.layerReverb)
     this.layerReverb.connect(this.levelGain)
 
     this.panLFO.connect(this.panner.pan as unknown as Tone.InputNode)
-    this.shimmerLFO.connect(this.osc.frequency as unknown as Tone.InputNode)
+    this.shimmerLFO.connect(this.shimmerLFOGain)
+    this.shimmerLFOGain.connect(this.osc.frequency as unknown as Tone.InputNode)
   }
 
   connect(destination: Tone.InputNode): this {
@@ -357,5 +376,6 @@ export class SciFiAirLayer {
     this.levelGain.dispose()
     this.panLFO.dispose()
     this.shimmerLFO.dispose()
+    this.shimmerLFOGain.dispose()
   }
 }
