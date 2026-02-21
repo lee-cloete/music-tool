@@ -1,10 +1,6 @@
 <template>
   <div class="app" :class="{ running: isRunning }">
-
-    <!-- ── Subtle grid background ─────────────────────────────────────────── -->
     <canvas ref="bgCanvas" class="bg-canvas" aria-hidden="true" />
-
-    <!-- ── Header ────────────────────────────────────────────────────────── -->
     <header class="app-header">
       <p class="plant-title">LEELULZ DRONE MANUFACTURING PLANT</p>
       <p class="plant-subtitle">Autonomous Harmonic Fabrication Facility</p>
@@ -13,14 +9,13 @@
         <span class="status-text" :class="{ warning: isOverload }">{{ statusLabel }}</span>
         <span v-if="isOverload" class="overload-tag">!! OVERLOAD</span>
       </div>
+      <button class="btn help-btn" @click="openGuide" aria-label="Open how it works">
+        HOW IT WORKS
+      </button>
     </header>
-
-    <!-- ── Oscilloscope ───────────────────────────────────────────────────── -->
     <div class="oscilloscope" aria-hidden="true">
       <canvas ref="oscCanvas" class="osc-canvas" />
     </div>
-
-    <!-- ── Controls ──────────────────────────────────────────────────────── -->
     <Controls
       :is-running="isRunning"
       :is-starting="isStarting"
@@ -34,6 +29,10 @@
       :hum="params.hum"
       :fracture="params.fracture"
       :space="params.space"
+      :pulse="params.pulse"
+      :pure-drone="params.pureDrone"
+      :root="params.root"
+      :interval-spread="params.intervalSpread"
       :preset-names="presetNames"
       :active-preset="activePreset"
       :is-recording="isRecording"
@@ -51,14 +50,16 @@
       @update:hum="setHum"
       @update:fracture="setFracture"
       @update:space="setSpace"
+      @update:pulse="setPulse"
+      @update:pure-drone="setPureDrone"
+      @update:root="setRoot"
+      @update:interval-spread="setIntervalSpread"
       @save-preset="savePreset"
       @load-preset="loadPreset"
       @delete-preset="deletePreset"
       @start-record="handleStartRecord"
       @stop-record="handleStopRecord"
     />
-
-    <!-- ── Snapshot morpher ──────────────────────────────────────────────── -->
     <Snapshots
       :snapshots="snapshots"
       :active="morphActive"
@@ -72,12 +73,27 @@
       @toggle="toggleMorph"
       @update:duration="morphDuration = $event"
     />
-
-    <!-- ── Footer ────────────────────────────────────────────────────────── -->
     <footer class="app-footer">
-      <span>No server · No tracking</span>
+      <span>PURE MACHINE</span>
     </footer>
 
+    <Transition name="fade">
+      <div v-if="showGuide" class="modal-backdrop" @click.self="closeGuide">
+        <section class="modal-card" role="dialog" aria-modal="true" aria-label="How it works">
+          <div class="modal-head">
+            <h2>HOW IT WORKS</h2>
+            <button class="btn modal-close" @click="closeGuide" aria-label="Close guide">CLOSE</button>
+          </div>
+          <ol class="modal-list">
+            <li>Set `ROOT` and `INTERVAL` to choose your tonal center and harmonic spacing.</li>
+            <li>Shape tone and movement with the core + texture controls, then set `PULSE` or switch `PURE DRONE` on.</li>
+            <li>Capture 2-4 snapshots and morph between them to structure sections.</li>
+            <li>Let the engine evolve; macro scenes shift the sound every 2-5 minutes.</li>
+            <li>Record the full pass when it feels right (you can export).</li>
+          </ol>
+        </section>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -87,8 +103,8 @@ import Controls from './components/Controls.vue'
 import Snapshots, { type SnapState } from './components/Snapshots.vue'
 import { DroneEngine } from './audio/DroneEngine'
 import type { SoundMode } from './audio/DroneEngine'
+import { track } from './analytics'
 
-// ── Engine (lazy) ────────────────────────────────────────────────────────────
 let engine: DroneEngine | null = null
 
 function getEngine(): DroneEngine {
@@ -96,9 +112,9 @@ function getEngine(): DroneEngine {
   return engine
 }
 
-// ── UI state ─────────────────────────────────────────────────────────────────
 const isRunning = ref(false)
 const isStarting = ref(false)
+const showGuide = ref(false)
 
 const params = reactive({
   volume: 0.85,
@@ -111,27 +127,29 @@ const params = reactive({
   hum: 0.4,
   fracture: 0.15,
   space: 0.45,
+  pulse: 0.18,
+  pureDrone: false,
+  root: 0.35,
+  intervalSpread: 0.4,
 })
 
 const presetNames = ref<string[]>([])
 const activePreset = ref<string | null>(null)
 
-// ── Recording state ───────────────────────────────────────────────────────────
 const isRecording = ref(false)
 const recordingElapsed = ref(0)
 let recElapsedInterval = 0
 
-// ── Snapshot morpher ──────────────────────────────────────────────────────────
 const snapshots    = ref<(SnapState | null)[]>([null, null, null, null])
 const morphActive  = ref(false)
-const morphDuration = ref(8)   // seconds per step
-const morphProgress = ref(0)   // 0–1 within the current segment
+const morphDuration = ref(8)
+const morphProgress = ref(0)
 const morphFromIdx  = ref(-1)
 const morphToIdx    = ref(-1)
 
 let morphRaf         = 0
-let morphSegStart    = 0        // performance.now() when current segment began
-let morphLastUpdate  = 0        // last time engine params were pushed
+let morphSegStart    = 0
+let morphLastUpdate  = 0
 
 function getFilledIndices(): number[] {
   return snapshots.value.reduce<number[]>((acc, s, i) => {
@@ -146,6 +164,8 @@ function captureSnapshot(i: number) {
     density:  params.density,  grain:    params.grain,
     rust:     params.rust,     hum:      params.hum,
     fracture: params.fracture, space:    params.space,
+    pulse:    params.pulse,
+    root: params.root, intervalSpread: params.intervalSpread,
   }
 }
 
@@ -165,11 +185,15 @@ function applySnapState(s: SnapState, toEngine = true) {
   params.density  = s.density;  params.grain    = s.grain
   params.rust     = s.rust;     params.hum      = s.hum
   params.fracture = s.fracture; params.space    = s.space
+  params.pulse    = s.pulse
+  params.root = s.root; params.intervalSpread = s.intervalSpread
   if (toEngine && engine) {
     engine.setDarkness(s.darkness); engine.setMotion(s.motion)
     engine.setDensity(s.density);   engine.setGrain(s.grain)
     engine.setRust(s.rust);         engine.setHum(s.hum)
     engine.setFracture(s.fracture); engine.setSpace(s.space)
+    engine.setPulse(s.pulse)
+    engine.setRoot(s.root); engine.setIntervalSpread(s.intervalSpread)
   }
   params.mode = 'MANUAL'
   activePreset.value = null
@@ -210,7 +234,6 @@ function runMorph(ts: number) {
   const t       = Math.min(1, elapsed / dur)
   morphProgress.value = t
 
-  // Push interpolated values to engine at ~12 Hz to avoid flooding rampTo()
   if (ts - morphLastUpdate > 80) {
     morphLastUpdate = ts
     const from = snapshots.value[morphFromIdx.value]!
@@ -225,10 +248,12 @@ function runMorph(ts: number) {
       hum:      lerp(from.hum,      to.hum),
       fracture: lerp(from.fracture, to.fracture),
       space:    lerp(from.space,    to.space),
+      pulse:    lerp(from.pulse,    to.pulse),
+      root:     lerp(from.root,     to.root),
+      intervalSpread: lerp(from.intervalSpread, to.intervalSpread),
     })
   }
 
-  // Advance to next segment when current one completes
   if (t >= 1) {
     const fromPos  = filled.indexOf(morphFromIdx.value)
     const nextFrom = filled[(fromPos + 1) % filled.length] ?? -1
@@ -242,12 +267,10 @@ function runMorph(ts: number) {
   morphRaf = requestAnimationFrame(runMorph)
 }
 
-// ── Overload detection ────────────────────────────────────────────────────────
 const isOverload = computed(() =>
   isRunning.value && (params.rust > 0.72 || (params.density > 0.88 && params.grain > 0.65))
 )
 
-// ── Factory status messages ───────────────────────────────────────────────────
 const IDLE_MESSAGES = ['SYSTEM OFFLINE', 'STANDBY MODE', 'AWAITING ACTIVATION']
 const RUN_MESSAGES = [
   'HARMONIC GENERATION ACTIVE',
@@ -276,7 +299,6 @@ const statusLabel = computed(() => {
   return RUN_MESSAGES[statusMsgIdx.value % RUN_MESSAGES.length]
 })
 
-// ── Background grid canvas ────────────────────────────────────────────────────
 const bgCanvas = ref<HTMLCanvasElement | null>(null)
 
 function drawGrid() {
@@ -304,7 +326,6 @@ function drawGrid() {
   }
 }
 
-// ── Oscilloscope canvas ───────────────────────────────────────────────────────
 const oscCanvas = ref<HTMLCanvasElement | null>(null)
 let oscAnimFrame = 0
 
@@ -322,7 +343,6 @@ function startOscilloscope() {
   }
   resize()
 
-  // FFT display constants
   const MIN_DB  = -80
   const MAX_DB  = -5
   const MIN_HZ  = 18
@@ -340,7 +360,6 @@ function startOscilloscope() {
     const fft = engine?.getFFTData()
 
     if (!fft || !isRunning.value) {
-      // Flat silence line at bottom quarter
       ctx.strokeStyle = '#1e1e1e'
       ctx.lineWidth = 1
       ctx.beginPath()
@@ -351,7 +370,6 @@ function startOscilloscope() {
       return
     }
 
-    // Spectrum polyline
     ctx.strokeStyle = '#888'
     ctx.lineWidth = 1
     ctx.beginPath()
@@ -372,7 +390,6 @@ function startOscilloscope() {
     }
     ctx.stroke()
 
-    // Subtle floor line
     ctx.strokeStyle = '#1e1e1e'
     ctx.lineWidth = 1
     ctx.beginPath()
@@ -387,7 +404,6 @@ function startOscilloscope() {
   return () => cancelAnimationFrame(oscAnimFrame)
 }
 
-// ── Transport handlers ────────────────────────────────────────────────────────
 async function handleStart() {
   if (isRunning.value || isStarting.value) return
   isStarting.value = true
@@ -398,13 +414,17 @@ async function handleStart() {
     e.setMotion(params.motion)
     e.setDensity(params.density)
     await e.start()
-    // Apply texture params after start (engine now initialized)
     e.setGrain(params.grain)
     e.setRust(params.rust)
     e.setHum(params.hum)
     e.setFracture(params.fracture)
     e.setSpace(params.space)
+    e.setPulse(params.pulse)
+    e.setPureDrone(params.pureDrone)
+    e.setRoot(params.root)
+    e.setIntervalSpread(params.intervalSpread)
     isRunning.value = true
+    track('engine_start', { mode: params.mode })
   } catch (err) {
     console.error('[DroneEngine] start failed:', err)
   } finally {
@@ -416,6 +436,7 @@ function handleStop() {
   if (!isRunning.value) return
   getEngine().stop()
   isRunning.value = false
+  track('engine_stop')
 }
 
 function handleRandomize() {
@@ -426,11 +447,33 @@ function handleRandomize() {
   params.darkness = p.darkness
   params.motion = p.motion
   params.density = p.density
+  params.grain = p.grain
+  params.rust = p.rust
+  params.hum = p.hum
+  params.fracture = p.fracture
+  params.space = p.space
+  params.pulse = p.pulse
+  params.pureDrone = p.pureDrone
+  params.root = p.root
+  params.intervalSpread = p.intervalSpread
   params.mode = 'MANUAL'
   activePreset.value = null
+  track('sound_randomize')
 }
 
-// ── Param handlers ────────────────────────────────────────────────────────────
+function openGuide() {
+  showGuide.value = true
+  track('guide_open')
+}
+
+function closeGuide() {
+  showGuide.value = false
+}
+
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && showGuide.value) closeGuide()
+}
+
 function setVolume(v: number)   { params.volume = v; engine?.setVolume(v) }
 function setDarkness(v: number) { if (morphActive.value) stopMorph(); params.darkness = v; engine?.setDarkness(v) }
 function setMotion(v: number)   { if (morphActive.value) stopMorph(); params.motion = v; engine?.setMotion(v) }
@@ -440,12 +483,15 @@ function setRust(v: number)     { if (morphActive.value) stopMorph(); params.rus
 function setHum(v: number)      { if (morphActive.value) stopMorph(); params.hum = v; engine?.setHum(v) }
 function setFracture(v: number) { if (morphActive.value) stopMorph(); params.fracture = v; engine?.setFracture(v) }
 function setSpace(v: number)    { if (morphActive.value) stopMorph(); params.space = v; engine?.setSpace(v) }
+function setPulse(v: number)    { if (morphActive.value) stopMorph(); params.pulse = v; engine?.setPulse(v) }
+function setPureDrone(v: boolean) { if (morphActive.value) stopMorph(); params.pureDrone = v; engine?.setPureDrone(v) }
+function setRoot(v: number)     { if (morphActive.value) stopMorph(); params.root = v; engine?.setRoot(v) }
+function setIntervalSpread(v: number) { if (morphActive.value) stopMorph(); params.intervalSpread = v; engine?.setIntervalSpread(v) }
 
 function setMode(mode: string) {
   params.mode = mode as SoundMode
   const e = getEngine()
   e.setMode(mode as SoundMode)
-  // Sync all params from engine after mode applies
   const p = e.currentParams
   params.darkness = p.darkness
   params.motion = p.motion
@@ -455,10 +501,13 @@ function setMode(mode: string) {
   params.hum = p.hum
   params.fracture = p.fracture
   params.space = p.space
+  params.pulse = p.pulse
+  params.pureDrone = p.pureDrone
+  params.root = p.root
+  params.intervalSpread = p.intervalSpread
   activePreset.value = null
 }
 
-// ── Preset handlers ───────────────────────────────────────────────────────────
 function refreshPresets() {
   presetNames.value = getEngine().getPresetNames()
 }
@@ -482,6 +531,10 @@ function loadPreset(name: string) {
     params.hum = p.hum
     params.fracture = p.fracture
     params.space = p.space
+    params.pulse = p.pulse
+    params.pureDrone = p.pureDrone
+    params.root = p.root
+    params.intervalSpread = p.intervalSpread
     params.mode = e.currentMode
     activePreset.value = name
   }
@@ -493,11 +546,11 @@ function deletePreset(name: string) {
   refreshPresets()
 }
 
-// ── Recording handlers ────────────────────────────────────────────────────────
 function handleStartRecord() {
   if (!engine || !isRunning.value) return
   engine.startRecording()
   isRecording.value = true
+  track('record_start')
   recordingElapsed.value = 0
   recElapsedInterval = window.setInterval(() => {
     recordingElapsed.value = engine?.recordingElapsed ?? 0
@@ -509,20 +562,20 @@ async function handleStopRecord() {
   clearInterval(recElapsedInterval)
   recElapsedInterval = 0
   await engine.stopRecording()
+  track('record_stop')
   isRecording.value = false
   recordingElapsed.value = 0
 }
 
-// ── Lifecycle ─────────────────────────────────────────────────────────────────
 let stopOsc: (() => void) | undefined
 
 onMounted(() => {
   drawGrid()
   window.addEventListener('resize', drawGrid)
+  window.addEventListener('keydown', handleKeydown)
 
   stopOsc = startOscilloscope() ?? undefined
 
-  // Cycle status messages
   statusInterval = window.setInterval(() => {
     statusMsgIdx.value++
   }, 4200)
@@ -534,6 +587,7 @@ onUnmounted(() => {
   stopOsc?.()
   stopMorph()
   window.removeEventListener('resize', drawGrid)
+  window.removeEventListener('keydown', handleKeydown)
   clearInterval(statusInterval)
   clearInterval(recElapsedInterval)
   engine?.dispose()

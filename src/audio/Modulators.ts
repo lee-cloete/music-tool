@@ -1,40 +1,14 @@
-/**
- * Modulators.ts
- *
- * Slow-evolution modulation primitives for the ambient drone engine.
- * All modulation rates stay within 0.005 – 0.1 Hz.
- * Nothing rhythmic. Everything evolving.
- */
 
 import * as Tone from 'tone'
 
-// ---------------------------------------------------------------------------
-// RandomWalkModulator
-// ---------------------------------------------------------------------------
-// Drifts a single numeric value via a random walk.
-// Calls onValue() with the new value on every step so the caller can
-// apply it to any Tone.Signal / Param / native AudioParam.
-// ---------------------------------------------------------------------------
 
 export interface RandomWalkOptions {
-  /** Minimum output value */
-  min: number
-  /** Maximum output value */
-  max: number
-  /** Starting value (clamped to [min, max]) */
-  initial: number
-  /**
-   * Maximum step size expressed as a fraction of the total range.
-   * e.g. 0.05 → each step moves at most 5 % of (max − min).
-   */
-  stepFraction: number
-  /**
-   * How often a new step is taken, in Hz.
-   * Keep within 0.005 – 0.1 Hz for ambient feel.
-   */
-  rateHz: number
-  /** Called with the new value after every step */
-  onValue: (v: number) => void
+    min: number
+    max: number
+    initial: number
+    stepFraction: number
+    rateHz: number
+    onValue: (v: number) => void
 }
 
 export class RandomWalkModulator {
@@ -74,24 +48,20 @@ export class RandomWalkModulator {
     }
   }
 
-  /** Change rate without restarting (takes effect on next start / restart). */
-  setRate(hz: number): void {
+    setRate(hz: number): void {
     const wasRunning = this.timerId !== null
     this.stop()
     this.rateHz = Math.max(0.005, Math.min(0.1, hz))
     if (wasRunning) this.start()
   }
 
-  /** Update the walk bounds without affecting the current value. */
-  setRange(min: number, max: number): void {
+    setRange(min: number, max: number): void {
     this.min = min
     this.max = max
-    // Clamp current value to new range
     this.value = Math.max(min, Math.min(max, this.value))
   }
 
-  /** Update step size (fraction of range). */
-  setStepFraction(fraction: number): void {
+    setStepFraction(fraction: number): void {
     this.stepFraction = Math.max(0, Math.min(1, fraction))
   }
 
@@ -104,12 +74,6 @@ export class RandomWalkModulator {
   }
 }
 
-// ---------------------------------------------------------------------------
-// LFOModulator
-// ---------------------------------------------------------------------------
-// Thin, lifecycle-managed wrapper around Tone.LFO that exposes rate and
-// depth setters with smooth-ramping so there are never audible clicks.
-// ---------------------------------------------------------------------------
 
 export interface LFOModulatorOptions {
   frequency: number
@@ -145,17 +109,11 @@ export class LFOModulator {
     return this
   }
 
-  /** Ramp the LFO rate smoothly (avoids clicks). */
-  setFrequency(hz: number, rampTime = 4): void {
+    setFrequency(hz: number, rampTime = 4): void {
     this.lfo.frequency.rampTo(hz, rampTime)
   }
 
-  /**
-   * Update the modulation depth (min/max range).
-   * Changes are immediate – soft-set before audio starts or call during
-   * silent transitions to avoid artefacts.
-   */
-  setDepth(min: number, max: number): void {
+    setDepth(min: number, max: number): void {
     this.lfo.min = min
     this.lfo.max = max
   }

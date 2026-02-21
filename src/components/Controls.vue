@@ -1,7 +1,5 @@
 <template>
   <section class="controls" aria-label="Drone Engine Controls">
-
-    <!-- ── Transport ─────────────────────────────────────────────────────── -->
     <div class="section">
       <div class="transport">
         <button
@@ -36,8 +34,6 @@
         </button>
       </div>
     </div>
-
-    <!-- ── Synthesis mode ─────────────────────────────────────────────────── -->
     <div class="section">
       <div class="section-header">SYNTHESIS MODE</div>
       <div class="mode-row">
@@ -52,8 +48,6 @@
         </select>
       </div>
     </div>
-
-    <!-- ── Core parameters ────────────────────────────────────────────────── -->
     <div class="section">
       <div class="section-header">CORE PARAMETERS</div>
       <div class="param-grid">
@@ -108,8 +102,47 @@
 
       </div>
     </div>
+    <div class="section">
+      <div class="section-header">DRONE CORE</div>
+      <div class="param-grid">
+        <div class="param-row">
+          <span class="param-label">PURE DRONE</span>
+          <button
+            class="btn"
+            :class="{ 'btn-primary active': pureDrone }"
+            @click="$emit('update:pure-drone', !pureDrone)"
+            aria-label="Toggle pure drone mode"
+          >
+            {{ pureDrone ? 'ON' : 'OFF' }}
+          </button>
+          <span class="param-value">{{ pureDrone ? 'ON ' : 'OFF' }}</span>
+        </div>
 
-    <!-- ── Texture generator ──────────────────────────────────────────────── -->
+        <div class="param-row">
+          <label class="param-label" for="ctrl-root">ROOT</label>
+          <input
+            id="ctrl-root"
+            type="range" min="0" max="1" step="0.01"
+            :value="root"
+            @input="$emit('update:root', parseFloat(($event.target as HTMLInputElement).value))"
+            aria-label="Root frequency center"
+          />
+          <span class="param-value">{{ pct(root) }}</span>
+        </div>
+
+        <div class="param-row">
+          <label class="param-label" for="ctrl-interval-spread">INTERVAL</label>
+          <input
+            id="ctrl-interval-spread"
+            type="range" min="0" max="1" step="0.01"
+            :value="intervalSpread"
+            @input="$emit('update:interval-spread', parseFloat(($event.target as HTMLInputElement).value))"
+            aria-label="Interval spread"
+          />
+          <span class="param-value">{{ pct(intervalSpread) }}</span>
+        </div>
+      </div>
+    </div>
     <div class="section">
       <div class="section-header">TEXTURE GENERATOR</div>
       <div class="param-grid">
@@ -174,10 +207,20 @@
           <span class="param-value">{{ pct(space) }}</span>
         </div>
 
+        <div class="param-row">
+          <label class="param-label" for="ctrl-pulse">PULSE</label>
+          <input
+            id="ctrl-pulse"
+            type="range" min="0" max="1" step="0.01"
+            :value="pulse"
+            @input="$emit('update:pulse', parseFloat(($event.target as HTMLInputElement).value))"
+            aria-label="Pulse — subtle drum machine intensity"
+          />
+          <span class="param-value">{{ pct(pulse) }}</span>
+        </div>
+
       </div>
     </div>
-
-    <!-- ── Record row ─────────────────────────────────────────────────────── -->
     <div class="section">
       <div class="record-row">
         <button
@@ -202,8 +245,6 @@
         </span>
       </div>
     </div>
-
-    <!-- ── Preset panel ───────────────────────────────────────────────────── -->
     <div class="section">
       <div class="section-header">PRESETS</div>
       <div class="preset-panel">
@@ -251,7 +292,6 @@ import { ref, computed } from 'vue'
 import { SOUND_MODES } from '../audio/DroneEngine'
 import type { SoundMode } from '../audio/DroneEngine'
 
-// ── Props ─────────────────────────────────────────────────────────────────────
 const props = defineProps<{
   isRunning: boolean
   isStarting: boolean
@@ -265,13 +305,16 @@ const props = defineProps<{
   hum: number
   fracture: number
   space: number
+  pulse: number
+  pureDrone: boolean
+  root: number
+  intervalSpread: number
   presetNames: string[]
   activePreset: string | null
   isRecording: boolean
   recordingElapsed: number
 }>()
 
-// ── Emits ─────────────────────────────────────────────────────────────────────
 const emit = defineEmits<{
   start: []
   stop: []
@@ -286,6 +329,10 @@ const emit = defineEmits<{
   'update:hum': [value: number]
   'update:fracture': [value: number]
   'update:space': [value: number]
+  'update:pulse': [value: number]
+  'update:pure-drone': [value: boolean]
+  'update:root': [value: number]
+  'update:interval-spread': [value: number]
   'save-preset': [name: string]
   'load-preset': [name: string]
   'delete-preset': [name: string]
@@ -293,7 +340,6 @@ const emit = defineEmits<{
   'stop-record': []
 }>()
 
-// ── Local state ───────────────────────────────────────────────────────────────
 const presetNameInput = ref('')
 
 function handleSave() {
@@ -303,7 +349,6 @@ function handleSave() {
   presetNameInput.value = ''
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
 function pct(v: number): string {
   return String(Math.round(v * 100)).padStart(3, ' ')
 }

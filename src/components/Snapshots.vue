@@ -2,8 +2,6 @@
   <section class="controls" aria-label="Snapshot Morpher">
     <div class="section">
       <div class="section-header">SNAPSHOT MORPHER</div>
-
-      <!-- ── Snapshot slots ──────────────────────────────────────────────── -->
       <div class="snap-slots">
         <div
           v-for="(snap, i) in snapshots"
@@ -15,15 +13,12 @@
             'morph-to':   morphToIdx   === i,
           }"
         >
-          <!-- Empty slot: click to capture -->
           <button
             v-if="snap === null"
             class="snap-num"
             @click="$emit('capture', i)"
             :title="`Capture snapshot ${i + 1}`"
           >{{ i + 1 }}</button>
-
-          <!-- Filled slot: click label to load, × to delete -->
           <template v-else>
             <button
               class="snap-num"
@@ -38,10 +33,7 @@
           </template>
         </div>
       </div>
-
-      <!-- ── Morph controls (only shown with ≥2 snapshots) ─────────────── -->
       <template v-if="filledCount >= 2">
-        <!-- Progress track: a line with a moving cursor -->
         <div class="morph-track" role="progressbar" :aria-valuenow="Math.round(progress * 100)">
           <div class="morph-fill" :style="{ width: `${progress * 100}%` }" />
         </div>
@@ -88,6 +80,9 @@ export interface SnapState {
   hum:      number
   fracture: number
   space:    number
+  pulse:    number
+  root:     number
+  intervalSpread: number
 }
 
 const props = defineProps<{

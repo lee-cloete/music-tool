@@ -713,6 +713,62 @@ input[type='range']::-moz-range-thumb {
   text-transform: uppercase;
 }
 
+.help-btn {
+  margin-top: 0.45rem;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.6rem;
+  letter-spacing: 0.16em;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(0, 0, 0, 0.78);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.modal-card {
+  width: min(560px, 100%);
+  border: 1px solid var(--clr-border);
+  background: #050505;
+  padding: 0.8rem;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-bottom: 0.6rem;
+}
+
+.modal-head h2 {
+  font-size: 0.66rem;
+  letter-spacing: 0.2em;
+  color: var(--clr-text-bright);
+  font-weight: 600;
+}
+
+.modal-close {
+  padding: 0.26rem 0.55rem;
+  font-size: 0.58rem;
+}
+
+.modal-list {
+  padding-left: 1rem;
+  color: var(--clr-text);
+  font-size: 0.65rem;
+  line-height: 1.55;
+  letter-spacing: 0.06em;
+}
+
+.modal-list li + li {
+  margin-top: 0.3rem;
+}
+
 /* ── Vue transitions ─────────────────────────────────────────────────────── */
 
 .fade-enter-active, .fade-leave-active {

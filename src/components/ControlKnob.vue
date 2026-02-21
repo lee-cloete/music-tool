@@ -1,15 +1,12 @@
 <template>
   <div class="knob-wrapper">
     <label class="knob-label" :for="inputId">{{ label }}</label>
-
-    <!-- Circular SVG arc ───────────────────────────────────────────────── -->
     <div class="knob-ring-wrap" @pointerdown="startDrag" @click.stop>
       <svg
         class="knob-ring"
         viewBox="0 0 60 60"
         aria-hidden="true"
       >
-        <!-- Track arc -->
         <path
           :d="arcPath(0)"
           class="arc-track"
@@ -17,7 +14,6 @@
           stroke-width="4"
           stroke-linecap="round"
         />
-        <!-- Value arc -->
         <path
           :d="arcPath(normalised)"
           class="arc-value"
@@ -25,7 +21,6 @@
           stroke-width="4"
           stroke-linecap="round"
         />
-        <!-- Indicator dot -->
         <circle
           :cx="dotPos.x"
           :cy="dotPos.y"
@@ -33,12 +28,8 @@
           class="arc-dot"
         />
       </svg>
-
-      <!-- Percentage readout inside circle -->
       <span class="knob-pct">{{ Math.round(normalised * 100) }}</span>
     </div>
-
-    <!-- Native range for keyboard + accessibility ──────────────────────── -->
     <input
       :id="inputId"
       class="knob-range-sr"
@@ -58,7 +49,6 @@
 <script setup lang="ts">
 import { computed, ref, onUnmounted } from 'vue'
 
-// ── Props / emits ─────────────────────────────────────────────────────────────
 const props = withDefaults(defineProps<{
   label: string
   sublabel?: string
@@ -75,15 +65,11 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{ 'update:value': [v: number] }>()
 
-// ── Unique ID for a11y label pairing ─────────────────────────────────────────
 let _idCounter = 0
 const inputId = `knob-${_idCounter++}`
 
-// ── Derived ───────────────────────────────────────────────────────────────────
 const normalised = computed(() => (props.value - props.min) / (props.max - props.min))
 
-// ── Arc geometry ─────────────────────────────────────────────────────────────
-//  Arc goes from -225° to +45°  (270° travel, starting bottom-left)
 const CX = 30
 const CY = 30
 const R = 22
@@ -115,7 +101,6 @@ const dotPos = computed(() => {
   return polarToXY(START_DEG + sweepDeg)
 })
 
-// ── Drag ──────────────────────────────────────────────────────────────────────
 const dragging = ref(false)
 let lastY = 0
 const DRAG_SENSITIVITY = 0.004
@@ -130,7 +115,7 @@ function startDrag(e: PointerEvent) {
 
 function onPointerMove(e: PointerEvent) {
   if (!dragging.value) return
-  const dy = lastY - e.clientY          // up → positive
+  const dy = lastY - e.clientY
   lastY = e.clientY
   const delta = dy * DRAG_SENSITIVITY * (props.max - props.min)
   emit('update:value', clamp(props.value + delta, props.min, props.max))
@@ -145,7 +130,6 @@ function stopDrag() {
 
 onUnmounted(stopDrag)
 
-// ── Native range fallback ─────────────────────────────────────────────────────
 function onInput(e: Event) {
   emit('update:value', parseFloat((e.target as HTMLInputElement).value))
 }

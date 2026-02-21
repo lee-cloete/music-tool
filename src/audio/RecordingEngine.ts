@@ -1,20 +1,5 @@
-/**
- * RecordingEngine.ts
- *
- * Real-time audio capture using Tone.Recorder (wraps browser MediaRecorder).
- * Connects to any Tone node in the signal graph, records to a Blob, and
- * offers a static helper to trigger a browser download.
- *
- * Output format is whatever MediaRecorder prefers in the current browser:
- *   Chrome / Edge → audio/webm (Opus codec)
- *   Firefox       → audio/ogg  (Opus codec)
- *   Safari 17+    → audio/mp4  (AAC codec)
- *
- * Extension logic auto-detects the MIME type so the downloaded filename
- * always has the correct extension.
- */
-
 import * as Tone from 'tone'
+import { Mp3Encoder } from 'lamejs'
 
 export type RecordingState = 'idle' | 'recording' | 'stopping'
 
@@ -22,8 +7,6 @@ export class RecordingEngine {
   private recorder: Tone.Recorder | null = null
   private _state: RecordingState = 'idle'
   private _startedAt = 0
-
-  // ── Public state ───────────────────────────────────────────────────────────
 
   get state(): RecordingState {
     return this._state
@@ -33,19 +16,10 @@ export class RecordingEngine {
     return this._state === 'recording'
   }
 
-  /** Elapsed seconds since recording started (0 when idle). */
   get elapsedSeconds(): number {
     if (this._state !== 'recording') return 0
     return (Date.now() - this._startedAt) / 1000
   }
-
-  // ── API ────────────────────────────────────────────────────────────────────
-
-  /**
-   * Begin capturing audio from `source`.
-   * The recorder is wired in parallel – existing routing is unchanged.
-   * Safe to call only when state is 'idle'.
-   */
   start(source: Tone.ToneAudioNode): void {
     if (this._state !== 'idle') return
 
@@ -57,11 +31,6 @@ export class RecordingEngine {
     this._startedAt = Date.now()
   }
 
-  /**
-   * Stop recording, return the Blob, and automatically trigger a browser
-   * download with a timestamped filename.
-   * Resolves once the MediaRecorder has finalised the Blob.
-   */
   async stop(): Promise<Blob | null> {
     if (this._state !== 'recording' || !this.recorder) return null
 
@@ -79,21 +48,12 @@ export class RecordingEngine {
     return blob
   }
 
-  // ── Static helpers ─────────────────────────────────────────────────────────
-
-  /**
-   * Map a MIME type string to the most common file extension.
-   */
   static mimeToExtension(mimeType: string): string {
     if (mimeType.includes('ogg')) return 'ogg'
     if (mimeType.includes('mp4')) return 'm4a'
-    return 'webm' // default (Chrome, Edge)
+    return 'webm'
   }
 
-  /**
-   * Determine the best MIME type available for MediaRecorder.
-   * Falls back to empty string if the browser is the authority.
-   */
   static preferredMimeType(): string {
     const candidates = [
       'audio/webm;codecs=opus',
@@ -109,21 +69,29 @@ export class RecordingEngine {
     return ''
   }
 
-  /**
-   * Trigger a browser Save dialog for the given Blob.
-   * Automatically picks the right file extension from the MIME type.
-   * @param blob    - the recorded audio blob
-   * @param prefix  - filename prefix (default 'drone')
-   */
-  static download(blob: Blob, prefix = 'drone'): void {
+  static async download(blob: Blob, prefix = 'drone', preferred: 'auto' | 'mp3' = 'auto'): Promise<void> {
+    if (preferred === 'mp3') {
+      const mp3 = await RecordingEngine.tryConvertToMp3(blob)
+      if (mp3) {
+        RecordingEngine.downloadBlob(mp3, `${RecordingEngine.timestampedName(prefix)}.mp3`)
+        return
+      }
+    }
+
     const ext = RecordingEngine.mimeToExtension(blob.type)
+    RecordingEngine.downloadBlob(blob, `${RecordingEngine.timestampedName(prefix)}.${ext}`)
+  }
+
+  private static timestampedName(prefix: string): string {
     const ts = new Date()
       .toISOString()
       .replace('T', '_')
       .replace(/[:.]/g, '-')
       .slice(0, 19)
-    const filename = `${prefix}_${ts}.${ext}`
+    return `${prefix}_${ts}`
+  }
 
+  private static downloadBlob(blob: Blob, filename: string): void {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -133,7 +101,51 @@ export class RecordingEngine {
     a.click()
     document.body.removeChild(a)
 
-    // Revoke after a short delay so the browser has time to open the dialog
     setTimeout(() => URL.revokeObjectURL(url), 10_000)
+  }
+
+  private static async tryConvertToMp3(blob: Blob): Promise<Blob | null> {
+    try {
+      const arrayBuffer = await blob.arrayBuffer()
+      const context = new AudioContext()
+      const audioBuffer = await context.decodeAudioData(arrayBuffer.slice(0))
+      await context.close()
+
+      const channels = Math.min(2, audioBuffer.numberOfChannels)
+      const sampleRate = audioBuffer.sampleRate
+      const encoder = new Mp3Encoder(channels, sampleRate, 192)
+      const blockSize = 1152
+      const total = audioBuffer.length
+
+      const left = RecordingEngine.floatTo16(audioBuffer.getChannelData(0))
+      const right = channels > 1
+        ? RecordingEngine.floatTo16(audioBuffer.getChannelData(1))
+        : null
+
+      const chunks: Int8Array[] = []
+      for (let i = 0; i < total; i += blockSize) {
+        const lChunk = left.subarray(i, i + blockSize)
+        const encoded = right
+          ? encoder.encodeBuffer(lChunk, right.subarray(i, i + blockSize))
+          : encoder.encodeBuffer(lChunk)
+        if (encoded.length > 0) chunks.push(new Int8Array(encoded))
+      }
+      const flushed = encoder.flush()
+      if (flushed.length > 0) chunks.push(new Int8Array(flushed))
+      if (chunks.length === 0) return null
+
+      return new Blob(chunks as unknown as BlobPart[], { type: 'audio/mpeg' })
+    } catch {
+      return null
+    }
+  }
+
+  private static floatTo16(input: Float32Array): Int16Array {
+    const output = new Int16Array(input.length)
+    for (let i = 0; i < input.length; i++) {
+      const s = Math.max(-1, Math.min(1, input[i] ?? 0))
+      output[i] = s < 0 ? s * 32768 : s * 32767
+    }
+    return output
   }
 }
