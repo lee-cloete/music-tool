@@ -74,7 +74,7 @@
       @update:duration="morphDuration = $event"
     />
     <footer class="app-footer">
-      <span>PURE MACHINE</span>
+      <span>leecloete.dev</span>
     </footer>
 
     <Transition name="fade">
