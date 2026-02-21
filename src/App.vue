@@ -58,6 +58,21 @@
       @stop-record="handleStopRecord"
     />
 
+    <!-- ── Snapshot morpher ──────────────────────────────────────────────── -->
+    <Snapshots
+      :snapshots="snapshots"
+      :active="morphActive"
+      :duration="morphDuration"
+      :progress="morphProgress"
+      :morph-from-idx="morphFromIdx"
+      :morph-to-idx="morphToIdx"
+      @capture="captureSnapshot"
+      @load="loadSnapshot"
+      @delete="deleteSnapshot"
+      @toggle="toggleMorph"
+      @update:duration="morphDuration = $event"
+    />
+
     <!-- ── Footer ────────────────────────────────────────────────────────── -->
     <footer class="app-footer">
       <span>No server · No tracking</span>
@@ -69,6 +84,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import Controls from './components/Controls.vue'
+import Snapshots, { type SnapState } from './components/Snapshots.vue'
 import { DroneEngine } from './audio/DroneEngine'
 import type { SoundMode } from './audio/DroneEngine'
 
@@ -104,6 +120,127 @@ const activePreset = ref<string | null>(null)
 const isRecording = ref(false)
 const recordingElapsed = ref(0)
 let recElapsedInterval = 0
+
+// ── Snapshot morpher ──────────────────────────────────────────────────────────
+const snapshots    = ref<(SnapState | null)[]>([null, null, null, null])
+const morphActive  = ref(false)
+const morphDuration = ref(8)   // seconds per step
+const morphProgress = ref(0)   // 0–1 within the current segment
+const morphFromIdx  = ref(-1)
+const morphToIdx    = ref(-1)
+
+let morphRaf         = 0
+let morphSegStart    = 0        // performance.now() when current segment began
+let morphLastUpdate  = 0        // last time engine params were pushed
+
+function getFilledIndices(): number[] {
+  return snapshots.value.reduce<number[]>((acc, s, i) => {
+    if (s !== null) acc.push(i)
+    return acc
+  }, [])
+}
+
+function captureSnapshot(i: number) {
+  snapshots.value[i] = {
+    darkness: params.darkness, motion:   params.motion,
+    density:  params.density,  grain:    params.grain,
+    rust:     params.rust,     hum:      params.hum,
+    fracture: params.fracture, space:    params.space,
+  }
+}
+
+function loadSnapshot(i: number) {
+  const s = snapshots.value[i]
+  if (!s) return
+  applySnapState(s)
+}
+
+function deleteSnapshot(i: number) {
+  snapshots.value[i] = null
+  if (morphActive.value) stopMorph()
+}
+
+function applySnapState(s: SnapState, toEngine = true) {
+  params.darkness = s.darkness; params.motion   = s.motion
+  params.density  = s.density;  params.grain    = s.grain
+  params.rust     = s.rust;     params.hum      = s.hum
+  params.fracture = s.fracture; params.space    = s.space
+  if (toEngine && engine) {
+    engine.setDarkness(s.darkness); engine.setMotion(s.motion)
+    engine.setDensity(s.density);   engine.setGrain(s.grain)
+    engine.setRust(s.rust);         engine.setHum(s.hum)
+    engine.setFracture(s.fracture); engine.setSpace(s.space)
+  }
+  params.mode = 'MANUAL'
+  activePreset.value = null
+}
+
+function toggleMorph() {
+  if (morphActive.value) stopMorph()
+  else startMorph()
+}
+
+function startMorph() {
+  const filled = getFilledIndices()
+  if (filled.length < 2) return
+  morphFromIdx.value = filled[0] ?? -1
+  morphToIdx.value   = filled[1] ?? -1
+  morphSegStart      = performance.now()
+  morphLastUpdate    = 0
+  morphActive.value  = true
+  morphRaf = requestAnimationFrame(runMorph)
+}
+
+function stopMorph() {
+  cancelAnimationFrame(morphRaf)
+  morphActive.value  = false
+  morphProgress.value = 0
+  morphFromIdx.value  = -1
+  morphToIdx.value    = -1
+}
+
+function runMorph(ts: number) {
+  if (!morphActive.value) return
+
+  const filled = getFilledIndices()
+  if (filled.length < 2) { stopMorph(); return }
+
+  const elapsed = ts - morphSegStart
+  const dur     = morphDuration.value * 1000
+  const t       = Math.min(1, elapsed / dur)
+  morphProgress.value = t
+
+  // Push interpolated values to engine at ~12 Hz to avoid flooding rampTo()
+  if (ts - morphLastUpdate > 80) {
+    morphLastUpdate = ts
+    const from = snapshots.value[morphFromIdx.value]!
+    const to   = snapshots.value[morphToIdx.value]!
+    const lerp = (a: number, b: number) => a + (b - a) * t
+    applySnapState({
+      darkness: lerp(from.darkness, to.darkness),
+      motion:   lerp(from.motion,   to.motion),
+      density:  lerp(from.density,  to.density),
+      grain:    lerp(from.grain,    to.grain),
+      rust:     lerp(from.rust,     to.rust),
+      hum:      lerp(from.hum,      to.hum),
+      fracture: lerp(from.fracture, to.fracture),
+      space:    lerp(from.space,    to.space),
+    })
+  }
+
+  // Advance to next segment when current one completes
+  if (t >= 1) {
+    const fromPos  = filled.indexOf(morphFromIdx.value)
+    const nextFrom = filled[(fromPos + 1) % filled.length] ?? -1
+    const nextTo   = filled[(fromPos + 2) % filled.length] ?? -1
+    morphFromIdx.value  = nextFrom
+    morphToIdx.value    = nextTo
+    morphSegStart       = ts
+    morphProgress.value = 0
+  }
+
+  morphRaf = requestAnimationFrame(runMorph)
+}
 
 // ── Overload detection ────────────────────────────────────────────────────────
 const isOverload = computed(() =>
@@ -185,7 +322,12 @@ function startOscilloscope() {
   }
   resize()
 
-  let t = 0
+  // FFT display constants
+  const MIN_DB  = -80
+  const MAX_DB  = -5
+  const MIN_HZ  = 18
+  const MAX_HZ  = 18000
+  const NYQUIST = 22050
 
   function draw() {
     if (!canvas) return
@@ -195,53 +337,49 @@ function startOscilloscope() {
 
     ctx.clearRect(0, 0, w, h)
 
-    // Flat line when stopped
-    if (!isRunning.value) {
-      ctx.strokeStyle = '#2a2a2a'
+    const fft = engine?.getFFTData()
+
+    if (!fft || !isRunning.value) {
+      // Flat silence line at bottom quarter
+      ctx.strokeStyle = '#1e1e1e'
       ctx.lineWidth = 1
       ctx.beginPath()
-      ctx.moveTo(0, h / 2)
-      ctx.lineTo(w, h / 2)
+      ctx.moveTo(0, h - 2)
+      ctx.lineTo(w, h - 2)
       ctx.stroke()
-      t++
       oscAnimFrame = requestAnimationFrame(draw)
       return
     }
 
-    // Primary waveform
-    const amp = h * 0.36 * (0.12 + params.motion * 0.5 + params.fracture * 0.3)
-    const d = params.density
-    const frac = params.fracture
-    const ts = t * 0.016
-
-    ctx.strokeStyle = '#999'
+    // Spectrum polyline
+    ctx.strokeStyle = '#888'
     ctx.lineWidth = 1
     ctx.beginPath()
-    for (let x = 0; x <= w; x++) {
-      const nx = x / w
-      const y = h / 2
-        + Math.sin(nx * Math.PI * 2 * (3 + d * 7) + ts * (1.2 + params.motion * 3)) * amp * 0.55
-        + Math.sin(nx * Math.PI * 2 * (1.8 + d * 4) * 1.618 + ts * (0.8 + params.motion * 2) + 1.3) * amp * 0.28
-        + Math.sin(nx * Math.PI * 2 * 0.8 + ts * 0.4 + frac * 8) * amp * 0.17
-      if (x === 0) ctx.moveTo(x, y)
+
+    let started = false
+    for (let i = 0; i < fft.length; i++) {
+      const freq = (i / fft.length) * NYQUIST
+      if (freq < MIN_HZ) continue
+      if (freq > MAX_HZ) break
+
+      const xNorm = Math.log(freq / MIN_HZ) / Math.log(MAX_HZ / MIN_HZ)
+      const x = xNorm * w
+      const db = Math.max(MIN_DB, Math.min(MAX_DB, fft[i] ?? MIN_DB))
+      const y = h - h * ((db - MIN_DB) / (MAX_DB - MIN_DB))
+
+      if (!started) { ctx.moveTo(x, y); started = true }
       else ctx.lineTo(x, y)
     }
     ctx.stroke()
 
-    // Secondary trace (ghost layer)
-    ctx.strokeStyle = '#383838'
+    // Subtle floor line
+    ctx.strokeStyle = '#1e1e1e'
     ctx.lineWidth = 1
     ctx.beginPath()
-    for (let x = 0; x <= w; x++) {
-      const nx = x / w
-      const y = h / 2
-        + Math.sin(nx * Math.PI * 2 * (1.5 + d * 3) + ts * 0.5 + 2.1) * amp * 0.38
-      if (x === 0) ctx.moveTo(x, y)
-      else ctx.lineTo(x, y)
-    }
+    ctx.moveTo(0, h - 1)
+    ctx.lineTo(w, h - 1)
     ctx.stroke()
 
-    t++
     oscAnimFrame = requestAnimationFrame(draw)
   }
   draw()
@@ -293,15 +431,15 @@ function handleRandomize() {
 }
 
 // ── Param handlers ────────────────────────────────────────────────────────────
-function setVolume(v: number) { params.volume = v; engine?.setVolume(v) }
-function setDarkness(v: number) { params.darkness = v; engine?.setDarkness(v) }
-function setMotion(v: number) { params.motion = v; engine?.setMotion(v) }
-function setDensity(v: number) { params.density = v; engine?.setDensity(v) }
-function setGrain(v: number) { params.grain = v; engine?.setGrain(v) }
-function setRust(v: number) { params.rust = v; engine?.setRust(v) }
-function setHum(v: number) { params.hum = v; engine?.setHum(v) }
-function setFracture(v: number) { params.fracture = v; engine?.setFracture(v) }
-function setSpace(v: number) { params.space = v; engine?.setSpace(v) }
+function setVolume(v: number)   { params.volume = v; engine?.setVolume(v) }
+function setDarkness(v: number) { if (morphActive.value) stopMorph(); params.darkness = v; engine?.setDarkness(v) }
+function setMotion(v: number)   { if (morphActive.value) stopMorph(); params.motion = v; engine?.setMotion(v) }
+function setDensity(v: number)  { if (morphActive.value) stopMorph(); params.density = v; engine?.setDensity(v) }
+function setGrain(v: number)    { if (morphActive.value) stopMorph(); params.grain = v; engine?.setGrain(v) }
+function setRust(v: number)     { if (morphActive.value) stopMorph(); params.rust = v; engine?.setRust(v) }
+function setHum(v: number)      { if (morphActive.value) stopMorph(); params.hum = v; engine?.setHum(v) }
+function setFracture(v: number) { if (morphActive.value) stopMorph(); params.fracture = v; engine?.setFracture(v) }
+function setSpace(v: number)    { if (morphActive.value) stopMorph(); params.space = v; engine?.setSpace(v) }
 
 function setMode(mode: string) {
   params.mode = mode as SoundMode
@@ -394,6 +532,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopOsc?.()
+  stopMorph()
   window.removeEventListener('resize', drawGrid)
   clearInterval(statusInterval)
   clearInterval(recElapsedInterval)

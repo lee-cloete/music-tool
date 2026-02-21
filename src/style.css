@@ -608,6 +608,96 @@ input[type='range']::-moz-range-thumb {
 
 .preset-delete:hover { color: var(--clr-danger); }
 
+/* ── Snapshot morpher ────────────────────────────────────────────────────── */
+
+.snap-slots {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.snap-slot {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--clr-border-dim);
+  transition: border-color 0.15s;
+}
+
+.snap-slot.filled {
+  border-color: var(--clr-border);
+}
+
+.snap-slot.morph-from {
+  border-color: var(--clr-active);
+}
+
+.snap-slot.morph-to {
+  border-color: var(--clr-accent);
+}
+
+.snap-num {
+  padding: 0.32rem 0.6rem;
+  background: transparent;
+  border: none;
+  color: var(--clr-text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: color 0.1s;
+  min-width: 1.8rem;
+  text-align: center;
+}
+
+.snap-slot.filled .snap-num {
+  color: var(--clr-text);
+}
+
+.snap-num:hover {
+  color: var(--clr-text-bright);
+}
+
+.snap-del {
+  padding: 0.2rem 0.4rem;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--clr-border-dim);
+  color: var(--clr-text-dim);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.1s;
+}
+
+.snap-del:hover { color: var(--clr-danger); }
+
+.morph-track {
+  height: 1px;
+  background: var(--clr-border-dim);
+  margin: 0.5rem 0 0.45rem;
+  position: relative;
+}
+
+.morph-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 1px;
+  background: var(--clr-text-dim);
+  transition: width 0.08s linear;
+  pointer-events: none;
+}
+
+.morph-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.morph-dur {
+  flex: 1;
+}
+
 /* ── Footer ──────────────────────────────────────────────────────────────── */
 
 .app-footer {

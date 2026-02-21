@@ -161,6 +161,7 @@ export class DroneEngine {
   private masterFilter!: Tone.Filter
   private masterReverb!: Tone.Freeverb
   private masterLimiter!: Tone.Limiter
+  private analyser!: Tone.Analyser
 
   // ── Layers ────────────────────────────────────────────────────────────────
   private subLayer!: SubLayer
@@ -187,6 +188,12 @@ export class DroneEngine {
   }
   get isInitialized(): boolean {
     return this._initialized
+  }
+
+  /** Current FFT magnitude data in dB (128 bins, 0→Nyquist). */
+  getFFTData(): Float32Array {
+    if (!this._initialized) return new Float32Array(128).fill(-100)
+    return this.analyser.getValue() as Float32Array
   }
 
   get isRecording(): boolean {
@@ -258,6 +265,10 @@ export class DroneEngine {
       .connect(this.masterLimiter)
     this.masterLimiter
       .toDestination()
+
+    // FFT analyser – tapped post-limiter, not in the audio path
+    this.analyser = new Tone.Analyser({ type: 'fft', size: 128, smoothing: 0.8 })
+    this.masterLimiter.connect(this.analyser)
 
     // ── Random-walk modulators ─────────────────────────────────────────────
     this.subPitchWalker = new RandomWalkModulator({
@@ -359,6 +370,7 @@ export class DroneEngine {
     this.masterFilter.dispose()
     this.masterReverb.dispose()
     this.masterLimiter.dispose()
+    this.analyser.dispose()
 
     this._initialized = false
   }
